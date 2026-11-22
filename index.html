@@ -2257,7 +2257,7 @@ ${rows.join('\n')}
 /* ===================== 畫面 ===================== */
 function setTheme(){const g=activeGuide();document.documentElement.style.setProperty('--main',g.color);}
 // 版本號：每次更新都要改這兩行
-const APP_VER='v1.3.1';
+const APP_VER='v1.3.2';
 const APP_DATE='2026-11-22';
 function render(){
   setTheme();
@@ -2694,10 +2694,15 @@ function timeSel(id,v,attr){v=/^\d{1,2}:\d{2}$/.test(v||'')?v.padStart(5,'0'):''
   return `<span class="row" style="gap:4px;flex:0 0 auto;align-items:center"><select class="inp" data-th="${id}" onchange="timeSelPick('${id}')" style="width:76px;padding:8px 6px"><option value="">--</option>${Array.from({length:24},(_,i)=>String(i).padStart(2,'0')).map(x=>`<option ${x===h?'selected':''}>${x}</option>`).join('')}</select><b>:</b><select class="inp" data-tm="${id}" onchange="timeSelPick('${id}')" style="width:68px;padding:8px 6px"><option value="">--</option>${ms.map(x=>`<option ${x===m?'selected':''}>${x}</option>`).join('')}</select><input type="hidden" id="${id}" value="${v}" ${attr||''}></span>`;}
 function timeSelPick(id){const h=document.querySelector(`[data-th="${id}"]`),m=document.querySelector(`[data-tm="${id}"]`),el=document.getElementById(id);if(!h||!m||!el)return;if(h.value&&!m.value)m.value='00';el.value=h.value?h.value+':'+(m.value||'00'):'';el.dispatchEvent(new Event('change',{bubbles:true}));}
 function setTimeVal(el,v){if(!el)return;v=String(v||'').padStart(5,'0');el.value=v;const h=document.querySelector(`[data-th="${el.id}"]`),m=document.querySelector(`[data-tm="${el.id}"]`);if(!h||!m)return;const [hh,mm]=v.split(':');h.value=hh;if(![...m.options].some(o=>o.value===mm))m.add(new Option(mm,mm));m.value=mm;}
+function apLabel(c){const a=AIRPORTS[c];return a?(/^X_/.test(c)?a[0]:`${a[0]}（${c}）`):'';}
+// 點進去時先清空，讓下拉選單列出全部機場；沒選也沒打字就還原
+function apFocus(el){el.dataset.old=el.value;el.value='';}
+function apBlur(el){if(!el.value.trim())el.value=el.dataset.old||'';if(el.value==='（不填）')el.value='';}
+function apVal(x){return x.custom?x.custom[0]:x.ap?apLabel(x.ap):(x.apText||'');}
 function flightFields(f){f=f||{};const a=f.arr||{},d=f.dep||{};
-  return `<div class="field"><label>🛬 去程：第一天幾點抵達哪個機場？（選填）</label><div class="row"><select class="inp grow" id="fArrAp" onchange="apTxtShow('fArrAp')">${apOptions(a.ap,1)}</select>${timeSel('fArrTime',a.time||'')}</div><input class="inp ${a.ap&&!a.custom?'hidden':''}" id="fArrApTxt" value="${esc(a.custom?a.custom[0]:(a.apText||''))}" placeholder="✏️ 自己輸入機場名稱，例如：旭川機場、松本機場（不知道可以空著）" style="margin-top:8px"><div class="row" style="margin-top:8px"><input class="inp grow" id="fArrNo" value="${esc(a.no||'')}" placeholder="航班號碼，例如 CI152" onchange="A.flightLookup({dataset:{d:'arr'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="arr">🔍 查時間</button></div><div class="tiny hidden" id="fArrInfo" style="margin-top:6px"></div></div>
+  return `<datalist id="apList"><option value="（不填）"></option>${Object.entries(AIRPORTS).filter(([k])=>!/^X_/.test(k)).map(([k])=>`<option value="${apLabel(k)}"></option>`).join('')}</datalist><div class="field"><label>🛬 去程：第一天幾點抵達哪個機場？（選填）</label><div class="row"><input class="inp grow" id="fArrAp" list="apList" autocomplete="off" onfocus="apFocus(this)" onblur="apBlur(this)" value="${esc(apVal(a))}" placeholder="點一下選機場，或直接輸入">${timeSel('fArrTime',a.time||'')}</div><div class="row" style="margin-top:8px"><input class="inp grow" id="fArrNo" value="${esc(a.no||'')}" placeholder="航班號碼，例如 CI152" onchange="A.flightLookup({dataset:{d:'arr'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="arr">🔍 查時間</button></div><div class="tiny hidden" id="fArrInfo" style="margin-top:6px"></div></div>
   <div class="field"><label>🛩️ 旅途中轉搭飛機（選填，例如第 3 天從東京飛札幌）</label><div id="midFlights">${(f.mid||[]).map(m=>midRowHTML(m)).join('')}</div><button class="btn ghost sm" data-act="addMidFlight">＋ 追加一段航班</button></div>
-  <div class="field"><label>🛫 回程：最後一天幾點從哪個機場起飛？（選填）</label><div class="row"><select class="inp grow" id="fDepAp" onchange="apTxtShow('fDepAp')">${apOptions(d.ap,1)}</select>${timeSel('fDepTime',d.time||'')}</div><input class="inp ${d.ap&&!d.custom?'hidden':''}" id="fDepApTxt" value="${esc(d.custom?d.custom[0]:(d.apText||''))}" placeholder="✏️ 自己輸入機場名稱，例如：旭川機場、松本機場（不知道可以空著）" style="margin-top:8px"><div class="row" style="margin-top:8px"><input class="inp grow" id="fDepNo" value="${esc(d.no||'')}" placeholder="航班號碼，例如 CI153" onchange="A.flightLookup({dataset:{d:'dep'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="dep">🔍 查時間</button></div><div class="tiny hidden" id="fDepInfo" style="margin-top:6px"></div></div>
+  <div class="field"><label>🛫 回程：最後一天幾點從哪個機場起飛？（選填）</label><div class="row"><input class="inp grow" id="fDepAp" list="apList" autocomplete="off" onfocus="apFocus(this)" onblur="apBlur(this)" value="${esc(apVal(d))}" placeholder="點一下選機場，或直接輸入">${timeSel('fDepTime',d.time||'')}</div><div class="row" style="margin-top:8px"><input class="inp grow" id="fDepNo" value="${esc(d.no||'')}" placeholder="航班號碼，例如 CI153" onchange="A.flightLookup({dataset:{d:'dep'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="dep">🔍 查時間</button></div><div class="tiny hidden" id="fDepInfo" style="margin-top:6px"></div></div>
   <div class="tiny" style="margin:-6px 0 12px">輸入航班號碼會自動查出時間和機場${AI==='ok'?'':'（要有 AI 才能自動查；沒有的話會幫你打開 Google 搜尋）'}，查到後請再確認一次。</div>`;}
 let _midK=0;
 function midRowHTML(m){m=m||{};const k='m'+(++_midK);
@@ -2710,10 +2715,9 @@ function readMid(){return [...document.querySelectorAll('.mid-row')].map(r=>{con
   return {day:+g('mfDay'),no:g('mfNo').toUpperCase(),from:g('mfFrom'),dep:g('mfDep'),to:g('mfTo'),arr:g('mfArr')};}).filter(m=>AIRPORTS[m.from]&&AIRPORTS[m.to]&&m.from!==m.to);}
 function apTxtShow(id){const s=$('#'+id),t=$('#'+id+'Txt');if(s&&t)t.classList.toggle('hidden',!!s.value&&!/^X_/.test(s.value));}
 function readFlights(){const g=id=>(($('#'+id)||{}).value||'').trim();
-  const one=(k,extra)=>{let ap=g('f'+k+'Ap');const txt=g('f'+k+'ApTxt');const o=Object.assign({ap,time:g('f'+k+'Time'),no:g('f'+k+'No').toUpperCase()},extra);
-    if((!ap||/^X_/.test(ap))&&txt){const hit=Object.entries(AIRPORTS).find(([c,a])=>!/^X_/.test(c)&&(a[0]===txt||a[1]===txt||c===txt.toUpperCase()||a[0].replace('機場','')===txt.replace(/機場|空港/,'')));
+  const one=(k,extra)=>{const txt=g('f'+k+'Ap').replace('（不填）','');const m=/（([A-Z0-9_]+)）$/.exec(txt);const ap=m&&AIRPORTS[m[1]]?m[1]:'';const o=Object.assign({ap,time:g('f'+k+'Time'),no:g('f'+k+'No').toUpperCase()},extra);
+    if(!ap&&txt){const hit=Object.entries(AIRPORTS).find(([c,a])=>!/^X_/.test(c)&&(a[0]===txt||a[1]===txt||c===txt.toUpperCase()||a[0].replace('機場','')===txt.replace(/機場|空港/,'')));
       if(hit)o.ap=hit[0];else{o.ap='';o.apText=txt;}}
-    else if(/^X_/.test(ap)&&!txt)o.ap='';
     return o;};
   return {arr:one('Arr'),dep:one('Dep',{type:'intl'}),mid:readMid()};}
 // 自己輸入的機場：查出位置後當成一個機場來用
@@ -2808,7 +2812,7 @@ const A={
       const jpSide=isArr?hit.to:hit.from,wrong=isArr?!AIRPORTS[hit.to]:!AIRPORTS[hit.from];
       if(wrong){return say(`✈️ ${AL_NAME[no.slice(0,2)]||''} ${no}：${apName(hit.from)} ${hit.dep} → ${apName(hit.to)} ${hit.arr}\n⚠️ 這班是${isArr?'從日本飛回台灣':'從台灣飛去日本'}的，好像填反了，${isArr?'應該填在下面「回程」':'應該填在上面「去程」'}`);}
       const sel=$(isArr?'#fArrAp':'#fDepAp'),ti=$(isArr?'#fArrTime':'#fDepTime');
-      if(sel){sel.value=jpSide;apTxtShow(sel.id);}setTimeVal(ti,isArr?hit.arr:hit.dep);
+      if(sel)sel.value=apLabel(jpSide);setTimeVal(ti,isArr?hit.arr:hit.dep);
 
       return say(`✈️ ${AL_NAME[no.slice(0,2)]||''} ${no}${hit.op?'（由 '+hit.op+' 實際飛行）':''}：${apName(hit.from)} ${hit.dep} → ${apName(hit.to)} ${hit.arr}${hit.next?'（隔天）':''}${hit.note?'\n📝 '+hit.note:''}\n已幫你填好${isArr?'抵達':'起飛'}機場和時間。這是航班表的固定時間，偶爾會因季節調整，請再跟機票確認一次`);
     }
@@ -2824,7 +2828,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
       if(!r||!r.found)return say('查不到 '+no+' 的時間，請自己填一下（可以到航空公司網站查）');
       const ap=isArr?String(r.to||'').toUpperCase():String(r.from||'').toUpperCase(),tm=String(isArr?r.arr:r.dep||'').slice(0,5);
       const sel=$(isArr?'#fArrAp':'#fDepAp'),ti=$(isArr?'#fArrTime':'#fDepTime');
-      if(AIRPORTS[ap]&&sel){sel.value=ap;apTxtShow(sel.id);}if(/^\d{1,2}:\d{2}$/.test(tm)&&ti)setTimeVal(ti,tm);
+      if(AIRPORTS[ap]&&sel)sel.value=apLabel(ap);if(/^\d{1,2}:\d{2}$/.test(tm)&&ti)setTimeVal(ti,tm);
 
       say(`✈️ ${r.airline||''} ${no}：${r.from||'?'} ${r.dep||'?'} → ${r.to||'?'} ${r.arr||'?'}${r.days?'（'+r.days+'）':''}${AIRPORTS[ap]?'':'\n⚠️ '+ap+' 不在機場清單裡，請自己選機場'}\n${AI_MODE==='key'?'上網查到的，':'AI 依記憶回答的，'}請再跟機票確認一次`);
     }catch(e){say('內建航班表裡沒有「'+no+'」，AI 也查不到（'+aiErrText(e)+'）。可以到 Google 搜尋「'+no+' 航班」，再把時間填上面');}
