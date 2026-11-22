@@ -2084,6 +2084,108 @@ async function aiFood(){
     if(!S.food.list.length)toast('沒找到合適的店，換個關鍵字試試');
   }catch(e){aiErr(e);}
 }
+// ===== 交通票券資料（2026 年價格，大人）=====
+// a: 適用範圍（[緯度,經度,半徑公里]，可多個；null=全日本）  c: 包含的交通（sub 地鐵/電車/路面電車、bus 公車、jr 在來線與私鐵、shin 新幹線）
+// d: 連續幾天  fx: 外國旅客專用  we/wd: 只限週末／平日  e8: 每月 8 號也能用
+const PASS_DB=[
+ // ---- 全國 ----
+ {n:'JR Pass 全國版 7 天',p:50000,d:7,a:null,c:['jr','shin'],fx:1,note:'官網價；海外代理商 ¥53,000。希望號、瑞穗號要另外補票'},
+ {n:'JR Pass 全國版 14 天',p:80000,d:14,a:null,c:['jr','shin'],fx:1,note:'官網價；海外代理商 ¥84,000'},
+ {n:'JR Pass 全國版 21 天',p:100000,d:21,a:null,c:['jr','shin'],fx:1,note:'官網價；海外代理商 ¥105,000'},
+ // ---- JR 北海道 ----
+ {n:'北海道鐵路周遊券 5 天',p:22000,d:5,a:[[43.3,142.5,330]],c:['jr'],fx:1,note:'事先購買價；不含北海道新幹線'},
+ {n:'北海道鐵路周遊券 7 天',p:28000,d:7,a:[[43.3,142.5,330]],c:['jr'],fx:1,note:'事先購買價'},
+ {n:'北海道鐵路周遊券 10 天',p:37000,d:10,a:[[43.3,142.5,330]],c:['jr'],fx:1,note:'事先購買價'},
+ {n:'札幌－登別地區周遊券 4 天',p:10000,d:4,a:[[42.85,141.3,75]],c:['jr'],fx:1,note:'新千歲機場、札幌、小樽、登別'},
+ {n:'札幌－富良野地區周遊券 4 天',p:11000,d:4,a:[[43.4,142.0,110]],c:['jr'],fx:1,note:'新千歲機場、札幌、小樽、富良野、美瑛、旭川'},
+ // ---- JR 東日本 ----
+ {n:'JR EAST PASS 5 天',p:35000,d:5,a:[[35.8,139.7,110],[39.0,140.9,260],[37.6,139.0,110],[36.5,138.2,80]],c:['jr','shin'],fx:1,note:'關東、東北、新潟、長野（含新幹線指定席）'},
+ {n:'JR EAST PASS 10 天',p:50000,d:10,a:[[35.8,139.7,110],[39.0,140.9,260],[37.6,139.0,110],[36.5,138.2,80]],c:['jr','shin'],fx:1,note:'關東、東北、新潟、長野'},
+ {n:'JR TOKYO Wide Pass 3 天',p:16000,d:3,a:[[35.8,139.5,120]],c:['jr','shin'],fx:1,note:'東京近郊、日光、輕井澤、河口湖、伊豆'},
+ {n:'JR 東日本・南北海道鐵路周遊券 6 天',p:40000,d:6,a:[[35.8,139.7,110],[39.0,140.9,260],[37.6,139.0,110],[41.8,140.7,90]],c:['jr','shin'],fx:1,note:'東京到函館'},
+ {n:'JR 東北・南北海道鐵路周遊券 6 天',p:32000,d:6,a:[[39.0,140.9,260],[41.8,140.7,90]],c:['jr','shin'],fx:1,note:'仙台到函館（不含東京）'},
+ {n:'北陸拱型鐵路周遊券 7 天',p:35000,d:7,a:[[35.7,139.7,60],[36.6,138.2,60],[36.4,136.7,120],[34.85,135.6,60]],c:['jr','shin'],fx:1,note:'東京→長野→金澤→大阪'},
+ // ---- JR 西日本 ----
+ {n:'JR西日本QR2dayパス',p:4000,d:2,a:[[34.75,135.45,75]],c:['jr'],fx:0,note:'用 KANSAI MaaS App 買，姬路到長濱、奈良、和歌山'},
+ {n:'關西廣域鐵路周遊券 5 天',p:12000,d:5,a:[[34.75,135.4,170]],c:['jr','shin'],fx:1,note:'關西＋岡山、高松、城崎溫泉、天橋立、鳥取、白濱'},
+ {n:'關西＆廣島地區鐵路周遊券 5 天',p:17000,d:5,a:[[34.8,135.5,110],[34.5,133.3,150]],c:['jr','shin'],fx:1,note:'含宮島渡輪'},
+ {n:'關西＆北陸地區鐵路周遊券 7 天',p:19000,d:7,a:[[34.8,135.5,110],[36.4,136.7,130]],c:['jr','shin'],fx:1,note:'關西＋金澤、富山、福井'},
+ // ---- JR 東海（價格以官網為準）----
+ {n:'高山・北陸地區周遊券 5 天',p:19800,d:5,a:[[36.3,137.0,140]],c:['jr','shin','bus'],fx:1,note:'含白川鄉巴士；價格請以官網為準'},
+ {n:'富士山・靜岡地區周遊券 Mini 3 天',p:6500,d:3,a:[[35.1,138.6,70]],c:['jr','bus'],fx:1,note:'價格請以官網為準'},
+ {n:'伊勢・熊野・和歌山地區周遊券 5 天',p:13000,d:5,a:[[34.0,135.9,120]],c:['jr','bus'],fx:1,note:'價格請以官網為準'},
+ // ---- JR 四國 ----
+ {n:'四國鐵路周遊券 3 天',p:12000,d:3,a:[[33.7,133.5,140]],c:['jr','sub'],fx:1,note:'含高松琴電、高知路面電車（不含松山伊予鐵）'},
+ {n:'四國鐵路周遊券 7 天',p:20000,d:7,a:[[33.7,133.5,140]],c:['jr','sub'],fx:1,note:'含高松琴電、高知路面電車'},
+ // ---- JR 九州 ----
+ {n:'JR 九州周遊券 全九州 3 天',p:22000,d:3,a:[[32.6,130.8,230]],c:['jr','shin'],fx:1,note:'含九州新幹線'},
+ {n:'JR 九州周遊券 全九州 5 天',p:24000,d:5,a:[[32.6,130.8,230]],c:['jr','shin'],fx:1,note:'含九州新幹線'},
+ {n:'JR 九州周遊券 全九州 7 天',p:26000,d:7,a:[[32.6,130.8,230]],c:['jr','shin'],fx:1,note:'含九州新幹線'},
+ {n:'JR 九州周遊券 北部九州 3 天',p:15000,d:3,a:[[33.3,130.5,110]],c:['jr','shin'],fx:1,note:'福岡、長崎、別府、熊本'},
+ {n:'JR 九州周遊券 北部九州 5 天',p:17000,d:5,a:[[33.3,130.5,110]],c:['jr','shin'],fx:1,note:'福岡、長崎、別府、熊本'},
+ {n:'JR 九州周遊券 南部九州 3 天',p:12000,d:3,a:[[31.7,130.8,120]],c:['jr','shin'],fx:1,note:'鹿兒島、指宿、宮崎'},
+ // ---- 私鐵・地區周遊券 ----
+ {pr:'近鐵',n:'近鐵周遊券 1 天',p:1900,d:1,a:[[34.75,135.7,40]],c:['jr'],fx:1,note:'大阪、奈良、京都的近鐵'},
+ {pr:'近鐵',n:'近鐵周遊券 2 天',p:3700,d:2,a:[[34.75,135.7,40]],c:['jr'],fx:1,note:'大阪、奈良、京都的近鐵'},
+ {pr:'近鐵',n:'近鐵周遊券 5 天',p:4900,d:5,a:[[34.75,135.7,40],[34.7,136.5,90]],c:['jr'],fx:1,note:'再加名古屋、伊勢志摩'},
+ {pr:'小田急和箱根登山鐵道',n:'箱根周遊券 2 天（新宿出發）',p:7100,d:2,a:[[35.23,139.05,20]],c:['jr','bus','sub'],fx:0,note:'含新宿來回、登山電車、纜車、海賊船，約 70 個設施優惠'},
+ {pr:'小田急和箱根登山鐵道',n:'箱根周遊券 3 天（新宿出發）',p:7500,d:3,a:[[35.23,139.05,20]],c:['jr','bus','sub'],fx:0,note:'含新宿來回、登山電車、纜車、海賊船'},
+ {pr:'東武鐵道',n:'NIKKO PASS 世界遺產區 2 天',p:3000,d:2,a:[[36.75,139.6,15]],c:['jr','bus','sub'],fx:1,note:'淺草出發來回＋日光巴士；特急要另買'},
+ {pr:'東武鐵道',n:'NIKKO PASS 全區 4 天',p:8000,d:4,a:[[36.75,139.55,30]],c:['jr','bus','sub'],fx:1,note:'含中禪寺湖、鬼怒川；特急要另買'},
+ {pr:'富士急',n:'富士山・富士五湖周遊券 2 天',p:4700,d:2,a:[[35.5,138.76,20]],c:['jr','bus','sub'],fx:0,note:'富士急電車全線＋周遊巴士'},
+ {pr:'西鐵',n:'FUKUOKA 1DAY PASS',p:2650,d:1,a:[[33.5,130.5,35]],c:['jr','bus','sub'],fx:0,note:'西鐵電車到太宰府、柳川＋西鐵巴士'},
+ // ---- 城市一日券（地鐵／路面電車／公車）----
+ {n:'Tokyo Subway Ticket 24 小時',p:1000,d:1,a:[[35.68,139.76,25]],c:['sub'],fx:1,note:'東京 Metro＋都營地鐵（不含 JR）'},
+ {n:'Tokyo Subway Ticket 48 小時',p:1500,d:2,a:[[35.68,139.76,25]],c:['sub'],fx:1,note:'東京 Metro＋都營地鐵'},
+ {n:'Tokyo Subway Ticket 72 小時',p:2000,d:3,a:[[35.68,139.76,25]],c:['sub'],fx:1,note:'東京 Metro＋都營地鐵'},
+ {n:'橫濱 市營地鐵・巴士共通 1日乗車券',p:830,d:1,a:[[35.45,139.63,10]],c:['sub','bus'],fx:0,note:'只在港區玩可以買 ¥700 的みなとぶらりチケット'},
+ {n:'Osaka Metro・大阪シティバス 1日乗車券（平日）',p:820,d:1,a:[[34.69,135.50,15]],c:['sub','bus'],fx:0,wd:1},
+ {n:'Osaka Metro・大阪シティバス 1日乗車券（週末）',p:620,d:1,a:[[34.69,135.50,15]],c:['sub','bus'],fx:0,we:1},
+ {n:'京都 地下鉄・バス1日券',p:1100,d:1,a:[[35.00,135.76,12]],c:['sub','bus'],fx:0},
+ {n:'神戶市營地鐵 QR1日乗車券',p:980,d:1,a:[[34.69,135.19,12]],c:['sub'],fx:0,note:'網路購買'},
+ {n:'名古屋 地下鉄全線24時間券',p:760,d:1,a:[[35.17,136.90,15]],c:['sub','bus'],fx:0,wd:1},
+ {n:'名古屋 ドニチエコきっぷ',p:620,d:1,a:[[35.17,136.90,15]],c:['sub','bus'],fx:0,we:1,e8:1,note:'週末和每月 8 號'},
+ {n:'札幌 地下鉄専用1日乗車券',p:830,d:1,a:[[43.06,141.35,15]],c:['sub'],fx:0,wd:1,note:'刷信用卡感應會自動封頂'},
+ {n:'札幌 ドニチカキップ',p:520,d:1,a:[[43.06,141.35,15]],c:['sub'],fx:0,we:1,note:'刷信用卡感應會自動封頂'},
+ {n:'函館 市電1日乗車券',p:800,d:1,a:[[41.77,140.73,10]],c:['sub','bus'],fx:0},
+ {n:'仙台 るーぷる仙台・地下鉄共通一日乗車券',p:1000,d:1,a:[[38.26,140.87,10]],c:['sub','bus'],fx:0},
+ {n:'金澤市內1日フリー乗車券（巴士）',p:800,d:1,a:[[36.56,136.65,8]],c:['sub','bus'],fx:0},
+ {n:'富山 市內電車・バス1日ふりーきっぷ',p:750,d:1,a:[[36.70,137.21,8]],c:['sub','bus'],fx:0},
+ {n:'岡山 岡電路面電車一日乗車券',p:400,d:1,a:[[34.66,133.92,6]],c:['sub'],fx:0},
+ {n:'廣島電鐵 電車一日乗車券',p:700,d:1,a:[[34.39,132.45,25]],c:['sub','bus'],fx:0,note:'要去宮島就買含渡輪的一日乗車乗船券 ¥1,000'},
+ {n:'高知 とさでん電車一日乗車券（市內）',p:500,d:1,a:[[33.56,133.53,8]],c:['sub'],fx:0},
+ {n:'福岡市地下鐵 1日乗車券',p:640,d:1,a:[[33.59,130.40,15]],c:['sub'],fx:0,note:'直接刷信用卡感應，一天也最多扣 ¥640'},
+ {n:'長崎 路面電車 一日乗車券',p:600,d:1,a:[[32.75,129.87,8]],c:['sub','bus'],fx:0,note:'路面電車一次 ¥150，搭 4 次以上才划算'},
+ {n:'熊本市電 1日乗車券（手機版）',p:500,d:1,a:[[32.80,130.71,8]],c:['sub'],fx:0},
+ {n:'鹿兒島 CUTE 1 日券',p:1400,d:1,a:[[31.58,130.55,15]],c:['sub','bus'],fx:0,note:'市電＋市巴士＋櫻島渡輪'},
+ {n:'鹿兒島 CUTE 2 日券',p:2100,d:2,a:[[31.58,130.55,15]],c:['sub','bus'],fx:0,note:'市電＋市巴士＋櫻島渡輪'},
+ {n:'沖繩單軌電車（ゆいレール）一天上限',p:800,d:1,a:[[26.21,127.68,12]],c:['sub','bus'],fx:0,note:'直接刷信用卡感應，一天最多扣 ¥800，比 ¥1,000 的一日券便宜'}
+];
+
+function passCalc(t){
+  const D=t.days.map((d,i)=>{const s={sub:0,bus:0,jr:0,shin:0};
+    if(!driveOn(t,d))for(const it of dayItems(d)){const l=it.leg;if(l&&!it.useTaxi&&l.mode!=='walk')for(const p of (l.parts&&l.parts.length?l.parts:[l])){const m=p.mode;const k=m==='subway'||m==='tram'?'sub':m==='bus'?'bus':m==='shinkansen'?'shin':(m==='jr'||m==='train'||m==='ropeway'||m==='ferry')?'jr':null;if(k)s[k]+=p.fare||0;}}
+    const pts=dayItems(d).filter(x=>isNum(x.lat));const c=pts.length?{lat:pts.reduce((a,x)=>a+x.lat,0)/pts.length,lng:pts.reduce((a,x)=>a+x.lng,0)/pts.length}:null;
+    const dt=dayDateObj(t,i);return {i,s,c,drive:driveOn(t,d),we:dt?(dt.getDay()===0||dt.getDay()===6):false,e8:dt?dt.getDate()===8:false};});
+  const inA=(P,d)=>d.c&&!d.drive&&(!P.a||P.a.some(([la,ln,r])=>km({lat:la,lng:ln},d.c)<=r))&&(!P.we||d.we||(P.e8&&d.e8))&&(!P.wd||!d.we);
+  const cand=[];
+  for(const P of PASS_DB)for(let st=0;st<D.length;st++){
+    const win=D.slice(st,st+P.d).filter(d=>inA(P,d));if(!win.length||!inA(P,D[st]))continue;
+    const raw=win.reduce((a,d)=>a+P.c.reduce((b,k)=>b+d.s[k],0),0);
+    if(raw>P.p)cand.push({P,win,raw,sv:raw-P.p});}
+  cand.sort((a,b)=>b.sv-a.sv);
+  const used={};const pick=[];
+  for(const x of cand){if(x.win.some(d=>x.P.c.some(k=>used[d.i+'|'+k])))continue;x.win.forEach(d=>x.P.c.forEach(k=>used[d.i+'|'+k]=1));pick.push(x);}
+  pick.sort((a,b)=>a.win[0].i-b.win[0].i);
+  const dayTxt=w=>{const n=w.map(d=>d.i+1);return n.length>2&&n.at(-1)-n[0]===n.length-1?`第 ${n[0]}～${n.at(-1)} 天`:`第 ${n.join('、')} 天`;};
+  const out=pick.map(x=>`・${dayTxt(x.win)}：買「${x.P.n}」¥${x.P.p.toLocaleString()}，單買約 ${yen(x.raw)}，省 ${yen(x.sv)}${x.P.note?'（'+x.P.note+'）':''}${x.P.pr?'——這幾天的電車要搭'+x.P.pr+'才適用':''}${x.P.fx?'【外國旅客專用，要帶護照】':''}`);
+  const save=pick.reduce((a,x)=>a+x.sv,0);
+  if(D.some(d=>d.c&&!d.drive&&km({lat:34.69,lng:135.50},d.c)<=15))out.push('・在大阪那天如果要去很多收費景點（大阪城天守閣、空中庭園、水上巴士等），可以考慮「大阪周遊パス」1 日 ¥3,500（含地鐵乘到飽＋約 40 個景點免費），通常去 2 個收費景點就回本');
+  return {out,save,any:D.some(d=>d.s.sub+d.s.bus+d.s.jr+d.s.shin>0)};}
+function passText(t){const r=passCalc(t);
+  if(!r.any)return '還沒有交通資料（或全程自駕），先排行程再來算喔。';
+  if(!r.out.length)return '照目前的行程，每天搭車的次數不多，單買車票（或直接刷 IC 卡）就好，買一日券不會比較省。\n\n票價可能調整，購買前請到官網確認。';
+  return `${r.save>0?'買票券大約可以省 '+yen(r.save)+'（每人）：':'照目前的行程，車票單買就好，不過有這個可以參考：'}\n${r.out.join('\n')}\n\n車錢是粗估，路面電車和公車實際比較便宜；票價可能調整，購買前請到官網確認。`;}
 async function aiPass(){
   const t=curTrip();if(!t)return;if(AI!=='ok')return toast('AI 功能目前無法使用');
   const rows=[];t.days.forEach((d,i)=>{let prev=null;for(const it of dayItems(d)){if(it.leg&&it.leg.mode!=='walk')rows.push(`Day${i+1} ${(prev?prev.nameJa||prev.name:(d.hotel||'出發點'))}→${it.nameJa||it.name}：${MODE[it.leg.mode]?.[1]||''}${it.leg.line?'('+it.leg.line+')':''} ¥${it.leg.fare}`);prev=it;}});
@@ -2419,8 +2521,8 @@ function vCost(t){
   h+=`<div class="card"><h3>每天花費（每人）</h3>`;
   c.perDay.forEach((d,i)=>{const ms=Object.entries(d.m).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);h+=`<div style="padding:8px 0;border-bottom:1px dashed var(--soft2)"><div class="row between"><b>Day ${i+1} <span class="tiny">${dayDate(t,i)}</span></b><b style="color:var(--deep)">${yen(d.t+d.s)}</b></div><div class="tiny" style="margin-top:2px">交通 ${yen(d.t)}${ms.length?'（'+ms.map(([k,v])=>(MODE[k]||MODE.train)[0]+' '+(MODE[k]||MODE.train)[1]+' '+yen(v)).join('・')+'）':''}・門票餐費 ${yen(d.s)}</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>🎫 周遊券划不划算？</h3><div class="muted" style="margin-bottom:10px">讓嚮導依照你的交通路線，看看一日券或周遊券能不能省錢。</div>
-  <button class="btn sm" id="passBtn" data-act="aiPass" ${AI!=='ok'?'disabled':''}>幫我算算看</button>
+  h+=`<div class="card"><h3>🎫 周遊券划不划算？</h3><div class="muted" style="margin-bottom:10px">依照你每天的交通路線，從內建的 63 種票券（全國版 JR Pass、JR 北海道／東日本／西日本／東海／四國／九州的外國旅客周遊券、近鐵、箱根、日光、富士五湖，還有 20 多個城市的一日券）裡挑出最省錢的組合。</div>
+  <button class="btn sm" id="passBtn" data-act="passCalc">幫我算算看</button>${AI==='ok'?' <button class="btn ghost sm" data-act="aiPass">🤖 問 AI 有沒有其他券</button>':''}
   <div class="stream ${S.passText?'':'hidden'}" id="passBox" style="margin-top:12px">${esc(S.passText)}</div></div>`;
   h+=`<div class="tiny" style="margin-bottom:14px">費用皆為預估。日本 2025–2026 年各地交通費陸續調漲，出發前請用 Yahoo!乗換案内或官網確認。</div></div>`;
   return h;
@@ -2574,6 +2676,7 @@ const A={
     }catch(e){say('查不到 '+no+'，請自己選機場和時間');}
   },
   dayDrive:()=>{const t=curTrip();const d=t.days[S.dayIdx];if(!d)return;d.drive=!driveOn(t,d);saveTrip(t);render();toast(d.drive?'這天改成自駕，不算車錢':'這天改回搭車');},
+  passCalc:()=>{const t=curTrip();if(!t)return;S.passText=passText(t);render();},
   flightLookup:async el=>{
     const d=el.dataset.d,isArr=d==='arr';const inp=$(isArr?'#fArrNo':'#fDepNo');if(!inp)return;
     const no=inp.value.trim().toUpperCase().replace(/\s+/g,'');if(!no)return toast('先輸入航班號碼');
