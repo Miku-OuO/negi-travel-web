@@ -1821,15 +1821,17 @@ function parseWish(txt){
   const cn=x=>{x=String(x);if(/^\d+$/.test(x))return +x;if(x.length===2&&x[0]==='十')return 10+(NUM[x[1]]||0);if(x.length===2&&x[1]==='十')return (NUM[x[0]]||1)*10;return NUM[x]||0;};
   const N_='([一兩二三四五六七八九十\\d]{1,2})';
   r.cityPlan=[];
+  const V_='(?:都)?(?:要)?(?:去|到|在|住|待|玩|逛)*';
+  const PL=x=>{x=String(x||'').replace(/^(?:去|到|在|住|待|玩|逛)+/,'').replace(/(?:玩玩|玩|逛逛|逛街|逛|走走|觀光|旅遊|旅行|一帶|附近|那邊|這邊|市區)+$/,'').trim();return x&&JP_PLACES.find(x)?x:'';};
   for(const cl of s.split(/[，,。！!？?\n；;]|然後|還有|另外|再來|而且|\s+/).map(x=>x.trim()).filter(Boolean)){
     if(NEG.test(cl.replace(/(拉麵|燒肉).*$/,'')+'')&&/不要|不想|不吃/.test(cl))continue;
     if(/隨便|都可以|你排|你決定|交給你/.test(cl))continue;
     let cm;
-    if((cm=cl.match(new RegExp('^(?:前|頭|一開始)'+N_+'天(?:都)?(?:在|住|待|玩)?(.+)$')))&&JP_PLACES.find(cm[2])){r.cityPlan.push({name:cm[2],front:cn(cm[1])});continue;}
-    if((cm=cl.match(new RegExp('^(?:後|最後|後面)'+N_+'天(?:都)?(?:在|住|待|玩)?(.+)$')))&&JP_PLACES.find(cm[2])){r.cityPlan.push({name:cm[2],back:cn(cm[1])});continue;}
-    if((cm=cl.match(new RegExp('^第'+N_+'(?:天)?(?:到|至|~|-|～)第?'+N_+'天(?:都)?(?:在|住|待|玩)?(.+)$')))&&JP_PLACES.find(cm[3])){r.cityPlan.push({name:cm[3],from:cn(cm[1])-1,to:cn(cm[2])-1});continue;}
-    if((cm=cl.match(new RegExp('^第'+N_+'天(?:在|住|待|去|玩)(.+)$')))&&JP_PLACES.find(cm[2])&&!JP_FOOD.findFoods(cm[2]).length){r.cityPlan.push({name:cm[2],from:cn(cm[1])-1,to:cn(cm[1])-1});continue;}
-    if((cm=cl.match(new RegExp('^(.+?)(?:玩|待|住)?'+N_+'(?:天|晚)$')))&&JP_PLACES.find(cm[1])){r.cityPlan.push({name:cm[1],count:cn(cm[2])});continue;}
+    if((cm=cl.match(new RegExp('^(?:前|頭|一開始)'+N_+'天'+V_+'(.+)$')))&&PL(cm[2])){r.cityPlan.push({name:PL(cm[2]),front:cn(cm[1])});continue;}
+    if((cm=cl.match(new RegExp('^(?:後|最後|後面)'+N_+'天'+V_+'(.+)$')))&&PL(cm[2])){r.cityPlan.push({name:PL(cm[2]),back:cn(cm[1])});continue;}
+    if((cm=cl.match(new RegExp('^第'+N_+'(?:天)?(?:到|至|~|-|～)第?'+N_+'天'+V_+'(.+)$')))&&PL(cm[3])){r.cityPlan.push({name:PL(cm[3]),from:cn(cm[1])-1,to:cn(cm[2])-1});continue;}
+    if((cm=cl.match(new RegExp('^第'+N_+'天'+V_+'(.+)$')))&&PL(cm[2])&&!JP_FOOD.findFoods(cm[2]).length){r.cityPlan.push({name:PL(cm[2]),from:cn(cm[1])-1,to:cn(cm[1])-1});continue;}
+    if((cm=cl.match(new RegExp('^'+V_+'(.+?)(?:玩|待|住|逛)?'+N_+'(?:天|晚)$')))&&PL(cm[1])){r.cityPlan.push({name:PL(cm[1]),count:cn(cm[2])});continue;}
     const dm=cl.match(new RegExp('第'+N_+'天'));const dayIdx=dm?cn(dm[1])-1:null;
     const fs=JP_FOOD.findFoods(cl);
     const slot=/早餐|早飯|早上/.test(cl)?'breakfast':/宵夜|消夜|夜宵|半夜/.test(cl)?'late':/午餐|中餐|午飯|中午/.test(cl)?'lunch':/晚餐|晚飯|晚上/.test(cl)?'dinner':/點心|下午茶|下午/.test(cl)?'snack':'';
