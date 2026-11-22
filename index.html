@@ -661,7 +661,25 @@ textarea.inp{min-height:70px;resize:vertical}
   };
   E.geocode = (q, o) => E.locate(q, o);
   // 「大阪+京都+神戸」→ ['大阪','京都','神戸']
-  E.splitCities = d => String(d || '').split(/[+＋、,，・&＆→\/／]|\s+和\s+|\s{2,}/).map(x => x.trim()).filter(Boolean).slice(0, 6);
+  // 把「京都大阪」「京都和大阪」這種沒有分隔符號的拆開（只在整串查不到、且每一段都查得到時才拆）
+  const segPlaces = piece => {
+    const J = root.JP_PLACES; if (!J || !J.find || J.find(piece)) return [piece];
+    const go = (rest, depth) => {
+      rest = rest.replace(/^(?:和|跟|及|與|与|還有|再到|到|再去|去|然後)+/, '');
+      if (!rest) return [];
+      if (depth > 6) return null;
+      for (let L = Math.min(rest.length, 8); L >= 2; L--) {
+        const head = rest.slice(0, L);
+        if (!J.find(head)) continue;
+        const tail = go(rest.slice(L), depth + 1);
+        if (tail) return [head, ...tail];
+      }
+      return null;
+    };
+    const r = go(piece, 0);
+    return r && r.length >= 2 ? r : [piece];
+  };
+  E.splitCities = d => String(d || '').split(/[+＋、,，・&＆→\/／\s]+/).map(x => x.trim()).filter(Boolean).flatMap(segPlaces).slice(0, 6);
   // 一定要去：用頓號、逗號、換行分開；中文之間的空白也當分隔
   E.splitList = t => String(t || '').split(/[、,，;；\n\/／]|(?<=[぀-ヿ㐀-鿿])[\s　]+(?=[぀-ヿ㐀-鿿])/).map(x => x.trim()).filter(Boolean).slice(0, 12);
 
