@@ -174,11 +174,27 @@ textarea.inp{min-height:70px;resize:vertical}
 .fare-grid{display:grid;grid-template-columns:1fr 64px 64px 64px 64px;gap:6px;align-items:center;font-size:12.5px}
 .fare-grid input{width:100%;border:2px solid var(--line);border-radius:10px;padding:5px;text-align:center}
 #printView{display:none}
-@media print{body.printing>*:not(#printView){display:none!important}body.printing #printView{display:block;color:#222;font-size:12px;padding:0 4mm}
-#printView h1{font-size:20px;margin:0 0 4px}#printView h2{font-size:15px;margin:14px 0 4px;padding:4px 8px;background:#e8f6f3;border-radius:6px;break-after:avoid}
-#printView table{width:100%;border-collapse:collapse}#printView td{vertical-align:top;padding:3px 6px;border-bottom:1px solid #eee}#printView td.tm{width:92px;white-space:nowrap;color:#2a7d6f;font-weight:600}
-#printView .sl{font-size:10px;color:#888;font-weight:400}#printView .ja{font-size:11px;color:#666}#printView .nt{font-size:11px;color:#555}#printView tr.lg td{color:#777;font-size:11px;border-bottom:none;padding:1px 6px}
-#printView .pb{margin:8px 0;padding:6px 8px;border:1px solid #ddd;border-radius:6px}#printView .pm{color:#666;font-size:11px;margin:4px 0}#printView tr{break-inside:avoid}}
+@media print{@page{size:A4;margin:10mm}
+body.printing>*:not(#printView){display:none!important}
+body.printing #printView{display:block;color:#1f2a2e;font-size:12.5px;line-height:1.45;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#printView .cover{background:linear-gradient(120deg,#2BB3A3,#5B8DEF 60%,#8E6BE0);color:#fff;border-radius:14px;padding:14px 18px;margin-bottom:10px}
+#printView .cover h1{font-size:24px;margin:2px 0 4px;color:#fff}#printView .ct{font-size:12px;opacity:.95}#printView .cm{font-size:13px}
+#printView .pb{margin:8px 0;padding:8px 12px;border-radius:10px;background:#F4FAF9;border:1.5px solid #CFEAE6}#printView .pb.st{background:#FFF8EC;border-color:#F6DDB0}
+#printView .bt{font-weight:700;margin-bottom:2px}
+#printView .sum{margin:10px 0;padding:10px 12px;border-radius:10px;border:1.5px dashed #B9C7CC}#printView .sr{margin-top:4px}
+#printView .sd{display:inline-block;color:#fff;border-radius:999px;padding:0 8px;margin-right:6px;font-weight:700;font-size:11.5px}
+#printView .pd{break-before:page;page-break-before:always}
+#printView .dh{color:#fff;border-radius:12px;padding:8px 14px;margin:0 0 8px;display:flex;align-items:baseline;gap:12px}
+#printView .dn{font-size:22px;font-weight:800}#printView .dd{font-size:15px;font-weight:600}
+#printView table{width:100%;border-collapse:separate;border-spacing:0 5px}
+#printView tr.it td{background:var(--sc);vertical-align:top}#printView tr.it td.tm{width:64px;border-radius:10px 0 0 10px;border-left:6px solid var(--dc);padding:6px 8px;font-weight:800;color:#1f2a2e;font-size:14px;white-space:nowrap}
+#printView tr.it td.tm small{font-size:11px;font-weight:600;color:#55636a}#printView tr.it td.bd{border-radius:0 10px 10px 0;padding:6px 10px}
+#printView tr.it b{font-size:14px}#printView .sl{display:inline-block;background:#fff;border-radius:999px;padding:0 7px;font-size:10.5px;color:#55636a;margin-right:4px;vertical-align:1px}
+#printView .ja{font-size:11.5px;color:#4b5a60}#printView .nt{font-size:11.5px;color:#3d4b50;margin-top:2px}
+#printView tr.lg td{color:#5d6b70;font-size:11px;padding:0 10px 0 74px;background:none}
+#printView .dc{margin-top:6px;padding:6px 10px;border-left:6px solid;border-radius:8px;background:#F7F7F9;font-weight:600}
+#printView .tot{background:#FFF1F5;border-color:#F5C6D6;font-size:14px}#printView .pm{color:#66747a;font-size:11px;margin:4px 0}
+#printView tr{break-inside:avoid;page-break-inside:avoid}}
 </style>
 </head>
 <body>
@@ -1062,7 +1078,7 @@ ${lines}
     const must = (opts.mustGo || []).filter(m => m && m.lat != null).map(m => ({ ...m, kind: m.kind || 'spot', score: 99, tags: [], must: true, osm: m.osm || ('must:' + m.name) }));
     // 每天的中心：住宿在當天城市附近就用住宿；住大阪、當天去京都（一日遊）就用京都
     const hasH = d => d.hotel && d.hotel.lat != null, hasC = d => d.city && d.city.lat != null;
-    const anchor = opts.days.map(d => hasH(d) ? d.hotel : hasC(d) ? d.city : null);
+    const anchor = opts.days.map(d => hasH(d) && (!hasC(d) || km(d.hotel, d.city) <= 20) ? d.hotel : hasC(d) ? d.city : hasH(d) ? d.hotel : null);   // 住宿在當天城市附近就以住宿為中心；當天要去別的城市（一日遊）就以那個城市為中心
     // 候選景點：每個住宿／城市附近各挑一批，避免某個城市被擠掉
     let pool;
     if (anchor.every(Boolean)) {
@@ -2214,7 +2230,7 @@ ${rows.join('\n')}
 /* ===================== 畫面 ===================== */
 function setTheme(){const g=activeGuide();document.documentElement.style.setProperty('--main',g.color);}
 // 版本號：每次更新都要改這兩行
-const APP_VER='v1.2.0';
+const APP_VER='v1.2.2';
 const APP_DATE='2026-11-22';
 function render(){
   setTheme();
@@ -2538,24 +2554,28 @@ function vCost(t){
   return h;
 }
 function printTrip(t){
-  const E=x=>esc(x==null?'':String(x));let h=`<h1>${E(t.title)}</h1><div class="pm">${E(dayDate(t,0))}${t.days.length>1?' ～ '+E(dayDate(t,t.days.length-1)):''}・${t.people} 人</div>`;
+  const E=x=>esc(x==null?'':String(x));const g=activeGuide();
+  let h=`<div class="cover"><div class="ct">🌱 蔥蔥旅行・行程表</div><h1>${E(t.title)}</h1><div class="cm">📅 ${E(dayDate(t,0))}${t.days.length>1?' ～ '+E(dayDate(t,t.days.length-1)):''}　👥 ${t.people} 人　🧭 嚮導 ${E(g.name)}</div></div>`;
   const f=t.flights||{};const fl=[];
   if(f.arr&&AIRPORTS[f.arr.ap])fl.push(`🛬 去程：${E(f.arr.no||'')} ${E(f.arr.time||'')} 抵達 ${AIRPORTS[f.arr.ap][0]}`);
   for(const m of midList(t))fl.push(`🛩️ 第 ${m.day+1} 天：${E(m.no||'')} ${E(m.dep)} ${AIRPORTS[m.from][0]} → ${E(m.arr||'')} ${AIRPORTS[m.to][0]}`);
   if(f.dep&&AIRPORTS[f.dep.ap])fl.push(`🛫 回程：${E(f.dep.no||'')} ${E(f.dep.time||'')} 從 ${AIRPORTS[f.dep.ap][0]} 起飛`);
-  if(fl.length)h+=`<div class="pb">${fl.join('<br>')}</div>`;
-  const ss=stayList(t);if(ss.length)h+=`<div class="pb">${ss.map(x=>`🏨 第 ${x.from+1}～${x.from+x.nights} 晚：${E(x.name)}${x.addr&&x.addr!==x.name?'（'+E(x.addr)+'）':''}`).join('<br>')}</div>`;
+  if(fl.length)h+=`<div class="pb fl"><div class="bt">✈️ 航班</div>${fl.join('<br>')}</div>`;
+  const ss=stayList(t);if(ss.length)h+=`<div class="pb st"><div class="bt">🏨 住宿</div>${ss.map(x=>`🏨 第 ${x.from+1}～${x.from+x.nights} 晚：${E(x.name)}${x.addr&&x.addr!==x.name?'（'+E(x.addr)+'）':''}`).join('<br>')}</div>`;
   const c=costData(t);
-  t.days.forEach((d,i)=>{const tm=computeTimes(t,d);h+=`<h2>Day ${i+1}　${E(dayDate(t,i))}${driveOn(t,d)?'　🚗 自駕':''}</h2><table>`;
+  const SC={morning:'#FFF4C2',lunch:'#FFE0C2',afternoon:'#D6F0FF',dinner:'#FFD9E4',evening:'#E6DCFF'};const DC=['#2BB3A3','#F08A4B','#5B8DEF','#E0558A','#8E6BE0','#3FA34D','#D9A21B'];
+  h+=`<div class="sum"><b>行程總覽</b>${t.days.map((d,i)=>`<div class="sr"><span class="sd" style="background:${DC[i%DC.length]}">Day ${i+1}</span>${E(dayDate(t,i))}　${E(dayItems(d).filter(x=>x.kind!=='food').slice(0,4).map(x=>x.name).join('・'))}</div>`).join('')}</div>`;
+  t.days.forEach((d,i)=>{const tm=computeTimes(t,d);const col=DC[i%DC.length];h+=`<section class="pd"><div class="dh" style="background:${col}"><span class="dn">Day ${i+1}</span><span class="dd">${E(dayDate(t,i))}${driveOn(t,d)?'　🚗 自駕':''}</span></div><table>`;
     let prev=startPt(t,d);
     for(const [k,label] of SLOTS){for(const it of d.slots[k]){const l=it.leg?legFor(t,d,prev,it,it.leg):null;
-      if(l)h+=`<tr class="lg"><td></td><td>${(MODE[l.mode]||MODE.train)[0]} ${(MODE[l.mode]||MODE.train)[1]} 約 ${l.minutes} 分${l.fare&&!driveOn(t,d)?'・'+yen(l.fare):''}</td></tr>`;
-      const x=tm[it.id];h+=`<tr><td class="tm">${x?hm(x.s)+'–'+hm(x.e):''}<div class="sl">${E(label)}</div></td><td><b>${E(it.name)}</b>${it.nameJa&&it.nameJa!==it.name?'<div class="ja">'+E(it.nameJa)+'</div>':''}${it.note?'<div class="nt">'+E(it.note)+'</div>':''}</td></tr>`;prev=it;}}
-    h+=`</table>`;const pd=c.perDay[i];if(pd)h+=`<div class="pm">這天每人約：交通 ${yen(pd.t)}・門票餐費 ${yen(pd.s)}</div>`;});
-  h+=`<div class="pb">預估每人花費：交通 ${yen(c.trans)}＋門票餐費 ${yen(c.spend)}＝<b>${yen(c.trans+c.spend)}</b>（不含住宿與購物）</div><div class="pm">由 蔥蔥旅行 ${APP_VER} 產生。時間與費用為預估，出發前請再確認。</div>`;
+      if(l)h+=`<tr class="lg"><td colspan="2">${(MODE[l.mode]||MODE.train)[0]} ${(MODE[l.mode]||MODE.train)[1]} 約 ${l.minutes} 分${l.fare&&!driveOn(t,d)?'・'+yen(l.fare):''}</td></tr>`;
+      const x=tm[it.id];h+=`<tr class="it" style="--sc:${SC[k]||'#eee'};--dc:${col}"><td class="tm">${x?hm(x.s)+'<br><small>～'+hm(x.e)+'</small>':''}</td><td class="bd"><span class="sl">${E(label)}</span> <b>${(KIND[it.kind]||KIND.spot)[0]} ${E(it.name)}</b>${it.nameJa&&it.nameJa!==it.name?'<div class="ja">'+E(it.nameJa)+'</div>':''}${it.note?'<div class="nt">'+E(it.note)+'</div>':''}</td></tr>`;prev=it;}}
+    h+=`</table>`;const pd=c.perDay[i];if(pd)h+=`<div class="dc" style="border-color:${col}">💴 這天每人約：交通 ${yen(pd.t)}・門票餐費 ${yen(pd.s)}</div>`;h+=`</section>`;});
+  h+=`<div class="pb tot">💰 預估每人花費：交通 ${yen(c.trans)}＋門票餐費 ${yen(c.spend)}＝<b>${yen(c.trans+c.spend)}</b>（不含住宿與購物）</div><div class="pm">由 蔥蔥旅行 ${APP_VER} 產生。時間與費用為預估，出發前請再確認。</div>`;
   let pv=document.getElementById('printView');if(!pv){pv=document.createElement('div');pv.id='printView';document.body.appendChild(pv);}
   pv.innerHTML=h;document.body.classList.add('printing');
   const done=()=>{document.body.classList.remove('printing');window.removeEventListener('afterprint',done);};window.addEventListener('afterprint',done);
+  if(window.NegiNative&&window.NegiNative.print){setTimeout(()=>{try{window.NegiNative.print(t.title);}catch(e){}setTimeout(()=>document.body.classList.remove('printing'),8000);toast('印表機選「另存為 PDF」就能存檔');},300);return;}
   setTimeout(()=>{try{window.print();}catch(e){}setTimeout(()=>{if(document.body.classList.contains('printing'))toast('如果沒有跳出列印畫面，請用瀏覽器選單的「分享 → 列印 → 另存為 PDF」');},1500);},200);}
 function vFood(t){
   if(S.food.day>=t.days.length)S.food.day=0;
@@ -2721,7 +2741,7 @@ const A={
   },
   dayDrive:()=>{const t=curTrip();const d=t.days[S.dayIdx];if(!d)return;d.drive=!driveOn(t,d);saveTrip(t);render();toast(d.drive?'這天改成自駕，不算車錢':'這天改回搭車');},
   exportPdf:()=>{const t=curTrip();if(!t)return;closeSheet();
-    if(window.NegiNative&&!window.print.__ok){return openSheet(`<h2>📄 匯出 PDF</h2><div class="muted" style="margin-bottom:12px">手機 App 目前還不能直接存 PDF。請用網頁版打開同一個行程（行程存在各自的手機或瀏覽器裡，網頁版要重新建一次），或先用網頁版匯出。</div><button class="btn block" data-act="closeSheet">知道了</button>`);}
+    if(window.NegiNative&&!window.NegiNative.print){return openSheet(`<h2>📄 匯出 PDF</h2><div class="muted" style="margin-bottom:12px">這個 App 版本太舊，還不能存 PDF。請更新到最新版的 App（v1.2.1 以上），或用網頁版匯出。</div><button class="btn block" data-act="closeSheet">知道了</button>`);}
     printTrip(t);},
   passCalc:()=>{const t=curTrip();if(!t)return;S.passText=passText(t);render();},
   flightLookup:async el=>{
