@@ -2207,6 +2207,9 @@ ${rows.join('\n')}
 
 /* ===================== 畫面 ===================== */
 function setTheme(){const g=activeGuide();document.documentElement.style.setProperty('--main',g.color);}
+// 版本號：每次更新都要改這兩行
+const APP_VER='v1.1.0';
+const APP_DATE='2026-11-22';
 function render(){
   setTheme();
   const app=$('#app');
@@ -2217,6 +2220,7 @@ function render(){
   else if(S.view==='settings')h=vSettings();
   const g=activeGuide();
   if((S.images[g.id]||BUILTIN_IMG[g.id])&&g.credit)h+=`<div class="credit">角色圖片 ${esc(g.credit)}</div>`;
+  h+=`<div class="credit">蔥蔥旅行 ${APP_VER}（${APP_DATE} 更新）・${window.NegiNative?'App 版':'網頁版'}</div>`;
   const keepY=window.scrollY;
   app.innerHTML=h;
   if(render.keep){window.scrollTo(0,keepY);}render.keep=true;
