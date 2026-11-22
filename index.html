@@ -194,7 +194,11 @@ body.printing #printView{display:block;color:#1f2a2e;font-size:12.5px;line-heigh
 #printView tr.lg td{color:#5d6b70;font-size:11px;padding:0 10px 0 74px;background:none}
 #printView .dc{margin-top:6px;padding:6px 10px;border-left:6px solid;border-radius:8px;background:#F7F7F9;font-weight:600}
 #printView .tot{background:#FFF1F5;border-color:#F5C6D6;font-size:14px}#printView .pm{color:#66747a;font-size:11px;margin:4px 0}
-#printView tr{break-inside:avoid;page-break-inside:avoid}}
+#printView tr{break-inside:avoid;page-break-inside:avoid}
+#printView .flow{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 2px;margin:12px 0 4px;padding:10px 6px;border-radius:14px;background:#FBFBFD;border:1.5px solid #ECEFF3;break-inside:avoid}
+#printView .fn{width:118px;text-align:center}#printView .fo{width:112px;height:78px;border-radius:50%;overflow:hidden;border:4px solid;margin:0 auto;background:#fff;display:flex;align-items:center;justify-content:center}
+#printView .fo img{width:100%;height:100%;object-fit:cover;display:block}#printView .fo span{font-size:34px}
+#printView .fc{font-size:11.5px;font-weight:700;margin-top:3px;line-height:1.25;color:#1f2a2e}#printView .fa{font-size:22px;font-weight:900}}
 </style>
 </head>
 <body>
@@ -1064,7 +1068,14 @@ ${lines}
 
     const FOODY = /市場|横丁|横町|橫丁|食べ歩き|屋台|夜市/;
     pois.forEach(p => { if (p.kind !== 'food' && p.kind !== 'cafe' && FOODY.test(p.nameJa + p.name)) { p.kind = 'food'; p.market = true; } });
-    const spots = pois.filter(p => p.kind !== 'food' && p.kind !== 'cafe' && ok(p) && !used.has(p.osm) && !used.has(p.nameJa)).sort((a, b) => val(b) - val(a));
+    // 遊樂園（環球影城、迪士尼…）要一早去排隊、玩一整天：沒選「主題樂園」也沒指定就不排
+    const THEME = /ユニバーサル|USJ|ディズニー|Disney|富士急ハイランド|ひらかたパーク|遊園地|テーマパーク|レゴランド|LEGOLAND|ナガシマスパーランド|ハウステンボス|ピューロランド|よみうりランド|としまえん|環球影城|迪士尼|遊樂園|游樂園|樂園/i;
+    const isTheme = p => THEME.test((p.name || '') + (p.nameJa || ''));
+    // 晚上會關門的地方（寺廟、神社、博物館、庭園、動物園…）不排在晚上
+    const CLOSE = /寺|神社|大社|神宮|八幡|稲荷|稻荷|院$|城$|城跡|城址|博物館|美術館|資料館|記念館|紀念館|庭園|動物園|水族館|植物園|御苑|陵/;
+    const closesEarly = p => !p.night && CLOSE.test((p.name || '') + ' ' + (p.nameJa || ''));
+    const themeOK = interest.has('kids');
+    const spots = pois.filter(p => p.kind !== 'food' && p.kind !== 'cafe' && ok(p) && !used.has(p.osm) && !used.has(p.nameJa) && (themeOK || !isTheme(p))).sort((a, b) => val(b) - val(a));
     const foods = pois.filter(p => p.kind === 'food' && ok(p) && !p.night && !used.has(p.nameJa));
     // 有「在地市場」興趣時，午餐優先排有名的市場
     const markets = foods.filter(p => p.market && p.score >= 3);
@@ -1150,7 +1161,7 @@ ${lines}
         const lastPt = slots.afternoon.at(-1) || slots.morning.at(-1) || start;
         if (!ev.length && rule.nightBar) { const bar = pickNear(bars, lastPt, usedFood, 3); if (bar) ev = [mk(bar, { note: '晚上小酌' })]; }
         if (!ev.length) { const nv = spots.filter(p => p.night && !taken.has(p.osm) && km(lastPt, p) < 8).sort((a, c) => km(lastPt, a) - km(lastPt, c))[0]; if (nv) { taken.add(nv.osm); ev = [mk(nv)]; } }
-        if (!ev.length && order.length) ev = [mk(order.shift())];
+        if (!ev.length && order.length) { const j = order.findIndex(p => !closesEarly(p)); if (j >= 0) ev = [mk(order.splice(j, 1)[0])]; }
         if (!ev.length && d.hotel) ev = [{ id: 'o' + (uid++), name: '回住宿休息', kind: 'spot', lat: d.hotel.lat, lng: d.hotel.lng, stay: 60, cost: 0, note: '早點休息，明天再出發', src: 'auto' }];
         slots.evening = ev;
       }
@@ -1176,13 +1187,19 @@ ${lines}
       // 每天都留在當天的城市：離當天城市太遠的自動點（咖啡、餐廳、景點）拿掉，之後由「不留白」補附近的
       { const ref = anchor[i] || (hasC(d) ? d.city : null);
         if (ref && ref.lat != null) for (const k of SLOT_KEYS) slots[k] = slots[k].filter(it => (keep[k] || []).includes(it) || it.must || String(it.osm || '').startsWith('must:') || must.some(m => m.osm === it.osm) || it.pinned || it.lat == null || km(ref, it) <= 20); }
+      // 晚上會關門的地方從晚上拿掉（自己加的、一定要去的不動）
+      slots.evening = slots.evening.filter(it => (keep.evening || []).includes(it) || it.must || String(it.osm || '').startsWith('must:') || !closesEarly(it));
+      // 遊樂園那天：一早出發、玩一整天，園內吃午餐
+      for (const k of ['morning', 'afternoon', 'evening']) { const tp = slots[k].find(isTheme); if (!tp) continue;
+        tp.stay = 540; tp.note = '一早出發排隊（建議開園前 1 小時到），園內吃午餐，玩一整天';
+        slots.morning = [tp, ...(keep.morning || []).filter(x => x !== tp)]; slots.afternoon = (keep.afternoon || []).filter(x => x !== tp); slots.lunch = (keep.lunch || []).length ? keep.lunch.slice() : [{ id: 'o' + (uid++), name: '園內午餐', kind: 'food', lat: tp.lat, lng: tp.lng, stay: 60, cost: 2000, note: '在園區裡吃', src: 'auto' }]; if (k === 'evening') slots.evening = slots.evening.filter(x => x !== tp); tp.themeDay = true; break; }
       // 不留白：空的時段先從同一天別的時段勻一個，再找附近沒用過的景點，最後才放「散步」
       for (const k of ['morning', 'afternoon', 'evening']) {
-        if (b.has(k) || slots[k].length) continue;
+        if (b.has(k) || slots[k].length || (k !== 'evening' && slots.morning.some(x => x.themeDay))) continue;
         const donor = ['morning', 'afternoon'].filter(x => x !== k && slots[x].length >= 2 && !slots[x].every(i => i.must))[0];
         if (donor && k !== 'evening') { slots[k].push(donor === 'morning' && k === 'afternoon' ? slots[donor].pop() : slots[donor].shift()); continue; }
         const at = Object.values(slots).flat().filter(x => x.lat != null).at(-1) || start;
-        const cand = (k === 'evening' ? spots.filter(p => p.night) : []).concat(spots).filter(p => !taken.has(p.osm) && at && km(at, p) < 12).sort((a, c) => km(at, a) - km(at, c))[0];
+        const cand = (k === 'evening' ? spots.filter(p => p.night) : []).concat(k === 'evening' ? spots.filter(p => !closesEarly(p)) : spots).filter(p => !taken.has(p.osm) && at && km(at, p) < 12).sort((a, c) => km(at, a) - km(at, c))[0];
         if (cand) { taken.add(cand.osm); slots[k] = [mk(cand)]; continue; }
         if (k === 'evening' && d.hotel) { slots[k] = [{ id: 'o' + (uid++), name: '回住宿休息', kind: 'spot', lat: d.hotel.lat, lng: d.hotel.lng, stay: 60, cost: 0, note: '早點休息，明天再出發', src: 'auto' }]; continue; }
         if (at && at.lat != null) { const nm = (d.city && d.city.name) || at.name || ''; slots[k] = [{ id: 'o' + (uid++), name: (k === 'evening' ? '晚上自由活動：' : '自由散步：') + nm + '一帶（第' + (opts.days.indexOf(d) + 1) + '天）', kind: 'spot', lat: at.lat, lng: at.lng, stay: 90, cost: 0, note: '點「在 Google 地圖打開」看附近有什麼', mapq: '観光スポット ' + nm, src: 'osm' }]; }
@@ -1433,6 +1450,16 @@ function endInfo(t,day){
   return {stay:x,pt,last,leg,arrive:last&&leg?times._end+leg.minutes:null};
 }
 function cityIdx(t,cities){
+  const r=cityIdx0(t,cities);const cs=cities||t.cities||[];
+  // 最後一天下午 4 點前的飛機：那天留在離機場最近的城市，不跑遠
+  if(!(t.dayCity&&t.dayCity.length)&&cs.length>1&&r.length&&hasDep(t)&&toMin(t.flights.dep.time)<960){
+    // 參考點：前一晚住的地方；沒有的話用機場聯外的主要車站（關西機場→難波，因為神戶雖然直線近但要繞路）
+    const HUB={KIX:[34.665,135.50],ITM:[34.70,135.50],NRT:[35.71,139.78],HND:[35.63,139.74],NGO:[35.17,136.88],CTS:[43.07,141.35],FUK:[33.59,130.42],OKA:[26.21,127.68]};
+    const st=nightStay(t,t.days.length-2);const a=AIRPORTS[t.flights.dep.ap];
+    const ref=st&&isNum(st.lat)?{lat:st.lat,lng:st.lng}:HUB[t.flights.dep.ap]?{lat:HUB[t.flights.dep.ap][0],lng:HUB[t.flights.dep.ap][1]}:{lat:a[2],lng:a[3]};
+    let bi=r[r.length-1],bd=1e9;cs.forEach((c,j)=>{if(c&&c.lat!=null){const d=NegiOSM.km(c,ref);if(d<bd){bd=d;bi=j;}}});r[r.length-1]=bi;}
+  return r;}
+function cityIdx0(t,cities){
   const cs=cities||t.cities||[];
   if(t.dayCity&&t.dayCity.length===t.days.length&&cs.length){const key=x=>{const h=JP_PLACES.find(x);return h?h.name:x;};
     const ks=cs.map(c=>key(c.name));return t.dayCity.map(n=>Math.max(0,ks.indexOf(key(n))));}
@@ -2230,7 +2257,7 @@ ${rows.join('\n')}
 /* ===================== 畫面 ===================== */
 function setTheme(){const g=activeGuide();document.documentElement.style.setProperty('--main',g.color);}
 // 版本號：每次更新都要改這兩行
-const APP_VER='v1.2.2';
+const APP_VER='v1.3.0';
 const APP_DATE='2026-11-22';
 function render(){
   setTheme();
@@ -2553,8 +2580,15 @@ function vCost(t){
   h+=`<div class="tiny" style="margin-bottom:14px">費用皆為預估。日本 2025–2026 年各地交通費陸續調漲，出發前請用 Yahoo!乗換案内或官網確認。</div></div>`;
   return h;
 }
-function printTrip(t){
+async function printTrip(t){
   const E=x=>esc(x==null?'':String(x));const g=activeGuide();
+  // 每天挑幾個主要景點，抓維基百科的照片做成流程圖（景點少的那天才放餐廳）
+  toast('正在整理行程表和景點照片…');
+  const SKIP=/^(自由散步|晚上自由活動|午餐：|晚餐：|早餐：|點心：|宵夜：|回住宿|園內午餐)/;
+  const picks=t.days.map(d=>{const its=dayItems(d).filter(x=>x.name&&!SKIP.test(x.name));let sp=its.filter(x=>x.kind!=='food'&&x.kind!=='cafe');if(sp.length<3)sp=its;return sp.slice(0,5);});
+  const IMG={};
+  await Promise.all(picks.flat().map(async it=>{try{const q=it.wikidata||it.wikipedia?it:{wikipedia:'ja:'+(it.nameJa||it.name)};
+    const w=await Promise.race([NegiOSM.wiki(q),new Promise(r=>setTimeout(()=>r(null),6000))]);if(w&&w.img)IMG[it.id]=w.img;}catch(e){}}));
   let h=`<div class="cover"><div class="ct">🌱 蔥蔥旅行・行程表</div><h1>${E(t.title)}</h1><div class="cm">📅 ${E(dayDate(t,0))}${t.days.length>1?' ～ '+E(dayDate(t,t.days.length-1)):''}　👥 ${t.people} 人　🧭 嚮導 ${E(g.name)}</div></div>`;
   const f=t.flights||{};const fl=[];
   if(f.arr&&AIRPORTS[f.arr.ap])fl.push(`🛬 去程：${E(f.arr.no||'')} ${E(f.arr.time||'')} 抵達 ${AIRPORTS[f.arr.ap][0]}`);
@@ -2570,10 +2604,13 @@ function printTrip(t){
     for(const [k,label] of SLOTS){for(const it of d.slots[k]){const l=it.leg?legFor(t,d,prev,it,it.leg):null;
       if(l)h+=`<tr class="lg"><td colspan="2">${(MODE[l.mode]||MODE.train)[0]} ${(MODE[l.mode]||MODE.train)[1]} 約 ${l.minutes} 分${l.fare&&!driveOn(t,d)?'・'+yen(l.fare):''}</td></tr>`;
       const x=tm[it.id];h+=`<tr class="it" style="--sc:${SC[k]||'#eee'};--dc:${col}"><td class="tm">${x?hm(x.s)+'<br><small>～'+hm(x.e)+'</small>':''}</td><td class="bd"><span class="sl">${E(label)}</span> <b>${(KIND[it.kind]||KIND.spot)[0]} ${E(it.name)}</b>${it.nameJa&&it.nameJa!==it.name?'<div class="ja">'+E(it.nameJa)+'</div>':''}${it.note?'<div class="nt">'+E(it.note)+'</div>':''}</td></tr>`;prev=it;}}
-    h+=`</table>`;const pd=c.perDay[i];if(pd)h+=`<div class="dc" style="border-color:${col}">💴 這天每人約：交通 ${yen(pd.t)}・門票餐費 ${yen(pd.s)}</div>`;h+=`</section>`;});
+    h+=`</table>`;
+    const pk=picks[i];if(pk.length>=2)h+=`<div class="flow">${pk.map((it,j)=>`${j?'<div class="fa" style="color:'+col+'">➜</div>':''}<div class="fn"><div class="fo" style="border-color:${col}">${IMG[it.id]?`<img src="${E(IMG[it.id])}" alt="">`:`<span>${(KIND[it.kind]||KIND.spot)[0]}</span>`}</div><div class="fc">${E(it.name)}</div></div>`).join('')}</div>`;
+    const pd=c.perDay[i];if(pd)h+=`<div class="dc" style="border-color:${col}">💴 這天每人約：交通 ${yen(pd.t)}・門票餐費 ${yen(pd.s)}</div>`;h+=`</section>`;});
   h+=`<div class="pb tot">💰 預估每人花費：交通 ${yen(c.trans)}＋門票餐費 ${yen(c.spend)}＝<b>${yen(c.trans+c.spend)}</b>（不含住宿與購物）</div><div class="pm">由 蔥蔥旅行 ${APP_VER} 產生。時間與費用為預估，出發前請再確認。</div>`;
   let pv=document.getElementById('printView');if(!pv){pv=document.createElement('div');pv.id='printView';document.body.appendChild(pv);}
   pv.innerHTML=h;document.body.classList.add('printing');
+  await Promise.all([...pv.querySelectorAll('img')].map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r;setTimeout(r,6000);})));
   const done=()=>{document.body.classList.remove('printing');window.removeEventListener('afterprint',done);};window.addEventListener('afterprint',done);
   if(window.NegiNative&&window.NegiNative.print){setTimeout(()=>{try{window.NegiNative.print(t.title);}catch(e){}setTimeout(()=>document.body.classList.remove('printing'),8000);toast('印表機選「另存為 PDF」就能存檔');},300);return;}
   setTimeout(()=>{try{window.print();}catch(e){}setTimeout(()=>{if(document.body.classList.contains('printing'))toast('如果沒有跳出列印畫面，請用瀏覽器選單的「分享 → 列印 → 另存為 PDF」');},1500);},200);}
