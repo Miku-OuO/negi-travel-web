@@ -1391,6 +1391,7 @@ function stayEmoji(x){return (STAY_TYPES[x.type]||STAY_TYPES.hotel)[0];}
 function stayPt(x){return x&&isNum(x.lat)?{id:'stay-'+x.id,name:x.name,nameJa:x.nameJa||x.name,lat:x.lat,lng:x.lng,isStay:true}:null;}
 function startInfo(t,day){
   const i=t.days.indexOf(day);
+  {const em=midOn(t,i).find(midEarly);if(em)return {kind:'air',mid:em,pt:apPt(em.to,'mid-arr'+i),label:'🛬 '+AIRPORTS[em.to][0]+'（下飛機後）',origin:AIRPORTS[em.to][1]};}
   if(i===0&&hasArr(t))return {kind:'air',pt:apPt(t.flights.arr.ap,'air-arr'),label:'🛬 '+AIRPORTS[t.flights.arr.ap][0]+'（下飛機後）',origin:AIRPORTS[t.flights.arr.ap][1]};
   const x=i>0?nightStay(t,i-1):null;
   if(x)return {kind:'stay',stay:x,pt:stayPt(x),label:stayEmoji(x)+' '+x.name,origin:x.nameJa||x.name};
@@ -1402,10 +1403,10 @@ function startInfo(t,day){
 function startPt(t,day){const x=startInfo(t,day);return x&&x.pt?x.pt:null;}
 function startPrev(t,day){const x=startInfo(t,day);if(!x)return null;if(x.pt)return x.pt;return {id:'start-text',name:x.origin,nameJa:x.origin};}
 function endInfo(t,day){
-  const i=t.days.indexOf(day);if(i===t.days.length-1&&hasDep(t))return null;
+  const i=t.days.indexOf(day);if(i===t.days.length-1&&hasDep(t))return null;if(midOn(t,i).some(m=>!midEarly(m)))return null;
   const x=nightStay(t,i);if(!x)return null;
   const its=dayItems(day);const last=its[its.length-1]||null;const pt=stayPt(x);let leg=null;
-  if(last&&pt)leg=(day.endLeg&&day.endLeg.fromId===last.id&&day.endLeg.toStay===x.id)?day.endLeg:localLeg(last,pt);
+  if(last&&pt)leg=legFor(t,day,last,pt,(day.endLeg&&day.endLeg.fromId===last.id&&day.endLeg.toStay===x.id)?day.endLeg:localLeg(last,pt));
   const times=computeTimes(t,day);
   return {stay:x,pt,last,leg,arrive:last&&leg?times._end+leg.minutes:null};
 }
@@ -1413,35 +1414,50 @@ function cityIdx(t,cities){
   const cs=cities||t.cities||[];
   if(t.dayCity&&t.dayCity.length===t.days.length&&cs.length){const key=x=>{const h=JP_PLACES.find(x);return h?h.name:x;};
     const ks=cs.map(c=>key(c.name));return t.dayCity.map(n=>Math.max(0,ks.indexOf(key(n))));}
+  const ms=midList(t);
+  if(ms.length&&cs.length>1){const near=ap=>{const a=AIRPORTS[ap];let bi=0,bd=1e9;cs.forEach((c,j)=>{if(c&&c.lat!=null){const d=NegiOSM.km(c,{lat:a[2],lng:a[3]});if(d<bd){bd=d;bi=j;}}});return bi;};
+    return t.days.map((_,i)=>{let ref=ms[0].from;for(const m of ms)if(m.day<i||(m.day===i&&midEarly(m)))ref=m.to;return near(ref);});}
   return NegiOSM.cityDays(t.days.length,Math.max(1,cs.length));
 }
 function travelOf(t,i){
   if(!t.cities||t.cities.length<2||i<=0||!window.NegiOSM)return null;
+  if(midList(t).some(m=>m.day===i||m.day===i-1))return null;
   const cd=cityIdx(t);if(cd[i]===cd[i-1])return null;
   const st=nightStay(t,i-1),to=t.cities[cd[i]];
   const from=st&&isNum(stayPt(st)?.lat)?Object.assign({},stayPt(st),{found:st.name}):t.cities[cd[i-1]];
   if(!from||!to||!isNum(from.lat)||!isNum(to.lat))return null;
-  const k=NegiOSM.km(from,to);const lg=localLeg(from,to);
+  const k=NegiOSM.km(from,to);const lg=driveOn(t,t.days[i])?(carLeg(from,to)||localLeg(from,to)):localLeg(from,to);
   return {from,to,km:k,minutes:lg.minutes,fromName:from.found||from.name,toName:to.found||to.name};
 }
+function midList(t){return ((t.flights&&t.flights.mid)||[]).filter(m=>m&&AIRPORTS[m.from]&&AIRPORTS[m.to]&&toMin(m.dep)!=null&&m.day>=0&&m.day<t.days.length).sort((a,b)=>a.day-b.day||toMin(a.dep)-toMin(b.dep));}
+function midOn(t,i){return midList(t).filter(m=>m.day===i);}
+function midEarly(m){return toMin(m.dep)<780;}
+function midArrMin(m){const a=toMin(m.arr);return a!=null?a:toMin(m.dep)+90;}
+function midDepInfo(t,i){const m=midOn(t,i).find(x=>!midEarly(x));if(!m)return null;const day=t.days[i];const its=dayItems(day);const last=its[its.length-1]||null;const ap=apPt(m.from,'mid-dep'+i);
+  const leg=last?legFor(t,day,last,ap,localLeg(last,ap)):null;const deadline=toMin(m.dep)-60;const times=computeTimes(t,day);const arrive=last&&leg?times._end+leg.minutes:null;
+  return {m,day,last,ap,leg,deadline,arrive,late:arrive!=null&&arrive>deadline};}
+function midCard(m,info){const a=AIRPORTS[m.from],b=AIRPORTS[m.to];
+  return `<div class="card flight" style="${info&&info.late?'border:2px solid #F2A08A':''}"><div class="row"><span style="font-size:26px">🛩️</span><div class="grow"><b>${esc(m.dep)} ${a[0]} → ${m.arr?esc(m.arr)+' ':''}${b[0]}</b><div class="tiny">${m.no?esc(m.no)+'・':''}國內線${info?'，建議 '+hm(info.deadline)+' 前到機場':'，下飛機＋領行李約 45 分'}</div>${info&&info.arrive!=null?(info.late?`<div style="color:#C2410C;font-size:13px;margin-top:4px">⚠️ 照這個行程大約 ${hm(info.arrive)} 才到機場，會來不及！建議刪掉或縮短最後的行程。</div>`:`<div style="color:var(--deep);font-size:13px;margin-top:4px">✅ 大約 ${hm(info.arrive)} 到機場，時間來得及</div>`):''}${info?`<div class="tiny" style="margin-top:4px">今晚到 ${esc(AP_CITY[m.to]||b[0])}，記得帶好行李</div>`:''}</div>${m.no?`<a class="linkbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${enc(m.no+' 航班動態')}">查航班</a>`:''}</div></div>`;}
 function blockedSlots(t,i){
   const b=new Set();const SL_END={morning:690,lunch:840,afternoon:1050,dinner:1170,evening:1320};const SL_START={morning:540,lunch:690,afternoon:810,dinner:1050,evening:1170};
   if(i===0&&hasArr(t)&&toMin(t.flights.arr.time)!=null){const ready=toMin(t.flights.arr.time)+60;for(const k of SLOT_KEYS)if(ready>=SL_END[k]-30)b.add(k);}
   const tv=travelOf(t,i);if(tv&&tv.km>120){b.add('morning');if(tv.minutes>300)b.add('lunch');}
-  if(i===t.days.length-1&&hasDep(t)){const dl=toMin(t.flights.dep.time)-(t.flights.dep.type==='dom'?60:120)-45;for(const k of SLOT_KEYS)if(dl<=SL_START[k]+30)b.add(k);}
+  if(i===t.days.length-1&&hasDep(t)){const dl=toMin(t.flights.dep.time)-(t.flights.dep.type==='dom'?60:120)-75;for(const k of SLOT_KEYS)if(dl<SL_START[k]+75)b.add(k);}
+  for(const m of midOn(t,i)){if(midEarly(m)){const ready=midArrMin(m)+45;for(const k of SLOT_KEYS)if(ready>=SL_END[k]-30)b.add(k);}else{const dl=toMin(m.dep)-60-60;for(const k of SLOT_KEYS)if(dl<SL_START[k]+75)b.add(k);}}
   return b;
 }
 function dayBase(t,day){
   let m={slow:540,normal:510,packed:480}[t.pace]||510;
   const st=toMin(day.startTime);if(st!=null)m=st;
   if(t.days[0]===day&&hasArr(t)&&toMin(t.flights.arr.time)!=null)m=Math.max(toMin(t.flights.arr.time)+60,st!=null?st:0);
+  {const em=midOn(t,t.days.indexOf(day)).find(midEarly);if(em)m=Math.max(midArrMin(em)+45,st!=null?st:0);}
   return m;
 }
 function isFoody(it){if(it.kind==='food')return true;if(it.kind==='shop'||it.kind==='cafe')return false;return FOODY.test((it.name||'')+(it.nameJa||''));}
 function depInfo(t){
   if(!hasDep(t))return null;
   const day=t.days[t.days.length-1];const its=dayItems(day);const last=its[its.length-1]||null;const ap=apPt(t.flights.dep.ap,'dep');
-  const leg=last?localLeg(last,ap):null;const buf=t.flights.dep.type==='dom'?60:120;const deadline=toMin(t.flights.dep.time)-buf;
+  const leg=last?legFor(t,day,last,ap,localLeg(last,ap)):null;const buf=t.flights.dep.type==='dom'?60:120;const deadline=toMin(t.flights.dep.time)-buf;
   const times=computeTimes(t,day);const arrive=last&&leg?times._end+leg.minutes:null;
   return {day,last,ap,leg,deadline,arrive,buf,late:arrive!=null&&arrive>deadline};
 }
@@ -1800,11 +1816,17 @@ function relinkLegs(t,day){
     prev=it;
   }
 }
+function driveOn(t,day){return day&&day.drive!=null?!!day.drive:!!t.drive;}
+function carLeg(a,b,base){const d=(a&&b&&isNum(a.lat)&&isNum(b.lat))?km(a,b):null;
+  if(d==null)return base?{mode:'car',minutes:base.minutes||20,fare:0,src:'est'}:null;
+  if(d<0.8)return {mode:'walk',minutes:Math.max(3,Math.ceil(d*1.3/4.2*60)),fare:0,src:'est'};
+  const r=d*1.3;const v=r<8?22:r<40?35:65;return {mode:'car',minutes:Math.round(r/v*60+5),fare:0,km:Math.round(r*10)/10,src:'est'};}
+function legFor(t,day,prev,it,l){if(!l||!driveOn(t,day))return l;return carLeg(prev,it,l)||l;}
 function computeTimes(t,day){
-  let m=dayBase(t,day);const out={};
+  let m=dayBase(t,day);const out={};let prev=startPt(t,day);
   for(const k of SLOT_KEYS){
     for(const it of day.slots[k]){
-      if(it.leg)m+=it.leg.minutes||0;
+      if(it.leg)m+=(legFor(t,day,prev,it,it.leg)||it.leg).minutes||0;prev=it;
       if(k==='lunch'&&m<690)m=690;
       if(k==='dinner'&&m<1050)m=1050;
       const st=it.stay>0?it.stay:60;out[it.id]={s:m,e:m+st};m+=st;
@@ -1982,8 +2004,18 @@ function applyPlan(t,res,idxs,mode){
     }
     for(const [id,it] of old){if(used.has(id))continue;if(mode!=='all'||it.pinned)ns[it.slot].push(it);}
     day.slots=ns;relinkLegs(t,day);
+    added-=trimForFlight(t,i);
   }
   return added;
+}
+// 趕不上飛機就從最後面往前刪（自己加的、📌 固定的、一定要去的不刪）
+function trimForFlight(t,i){
+  const day=t.days[i];if(!day)return 0;let n=0;
+  const late=()=>{if(i===t.days.length-1&&hasDep(t)){const x=depInfo(t);if(x&&x.late)return true;}const m=midDepInfo(t,i);return !!(m&&m.late);};
+  for(let g=0;g<20&&late();g++){
+    const rm=[...dayItems(day)].reverse().find(it=>!it.pinned&&it.by!=='user'&&!it.must);if(!rm)break;
+    day.slots[rm.slot]=day.slots[rm.slot].filter(x=>x!==rm);relinkLegs(t,day);n++;}
+  return n;
 }
 async function aiLegs(dayIdx){
   const t=curTrip();if(!t)return;if(AI!=='ok')return toast('AI 功能目前無法使用');
@@ -2132,7 +2164,7 @@ function vNew(){
   <div class="field"><label>跟誰去？</label><div class="chips" data-single="1" id="nGroup">${Object.entries(GROUPS).map(([k,v],i)=>`<button class="chip ${i===1?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
   <div class="field"><label>人數</label><div class="stepper"><button data-act="step" data-t="nPeople" data-d="-1">－</button><input id="nPeople" value="2" inputmode="numeric"><button data-act="step" data-t="nPeople" data-d="1">＋</button></div></div>
   <div class="field"><label>喜歡什麼？（可複選）</label><div class="chips" id="nTags">${TAGS.map(x=>`<button class="chip ${x==='美食'?'on':''}" data-act="chip" data-v="${x}">${x}</button>`).join('')}</div></div>
-  <div class="field"><label>步調</label><div class="chips" data-single="1" id="nPace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${k==='normal'?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
+  <div class="field"><label>步調</label><div class="chips" data-single="1" id="nPace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${k==='normal'?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div><div class="field"><label>交通方式</label><div class="chips" data-single="1" id="nDrive"><button class="chip on" data-act="chip" data-v="0">🚃 搭車（地鐵、JR、新幹線）</button><button class="chip" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button></div></div>
   <div class="field"><label>💬 想要怎麼樣的行程？（直接打字，可留空）</label><textarea class="inp" id="nWish" rows="3" placeholder="例如：想吃拉麵跟燒肉，每天晚上要去夾娃娃，不想太早起，一定要去清水寺" oninput="const r=parseWish(this.value),p=wishSummary(r),b=document.getElementById('nWishRes');b.textContent=p.length?'✅ 聽懂了：'+p.join('｜'):(this.value.trim()?(AI==='ok'?'🤖 這些關鍵字我認不出來，排行程時會交給 AI 看':'這些我還認不出來，可以換個說法，例如「想吃拉麵」「不想太早起」'):'');"></textarea><div class="tiny" id="nWishRes" style="margin-top:6px;line-height:1.7"></div></div>
   <div class="field"><label>一定要去的地方（可留空，用空白或頓號分開）</label><textarea class="inp" id="nMust" placeholder="例如：晴空塔、築地場外市場"></textarea></div>
   <div class="field"><label>旅伴嚮導</label><div class="chips" data-single="1" id="nGuide">${allGuides().map(g=>`<button class="chip ${g.id===(S.homeGuide||S.profile.activeGuide)?'on':''}" data-act="chip" data-v="${g.id}"><span class="swatch" style="background:${g.color}"></span>${esc(g.name)}</button>`).join('')}</div></div>
@@ -2162,7 +2194,9 @@ function dayChips(t,sel,act,withAll){
   return h+`</div>`;
 }
 function legHTML(t,day,prev,it,times){
-  const l=it.leg;if(!l)return '';
+  if(!it.leg)return '';const l=legFor(t,day,prev,it,it.leg);
+  if(l.mode==='car'){const nav=prev&&isNum(prev.lat)&&isNum(it.lat)?`<a href="https://www.google.com/maps/dir/?api=1&origin=${prev.lat},${prev.lng}&destination=${it.lat},${it.lng}&travelmode=driving" target="_blank" rel="noopener">開導航</a>`:'';
+    return `<div class="leg"><span class="lm">🚗 自駕</span><span>約 ${l.minutes} 分${l.km?'・'+l.km+' 公里':''}</span><span class="est">粗估</span>${nav}</div>`;}
   const m=MODE[l.mode]||MODE.train;
   const from=prev?(prev.nameJa||prev.name):(day.hotel||'');
   const to=it.nameJa||it.name;
@@ -2191,10 +2225,11 @@ function vPlan(t){
   let h=dayChips(t,di,'day',false)+`<div class="wrap">`;
   const si=startInfo(t,day);
   h+=staysCard(t);
-  h+=`<div class="card" style="padding:12px 14px"><div class="row between" style="align-items:flex-end"><div class="grow"><div class="tiny">這天從哪裡出發</div><b style="font-size:14.5px">${si?esc(si.label):'<span class="muted">還沒設定（上面加住宿）</span>'}</b></div><div><div class="tiny">幾點出發</div><input type="time" class="inp" id="startTime" data-day="${di}" value="${esc(day.startTime||'')}" style="width:130px;padding:6px 8px"></div></div>
+  h+=`<div class="card" style="padding:12px 14px"><div class="row between" style="align-items:flex-end"><div class="grow"><div class="tiny">這天從哪裡出發</div><b style="font-size:14.5px">${si?esc(si.label):'<span class="muted">還沒設定（上面加住宿）</span>'}</b></div><div><div class="tiny">幾點出發</div>${timeSel('startTime',day.startTime||'',`data-day="${di}"`)}</div></div>
   <div class="tiny" style="margin-top:4px">${day.startTime?'':'沒填就自動：'+hm(dayBase(t,day))+' 出發'}</div>
-  <div class="daybar"><button class="btn ghost sm" data-act="fillDay" ${!planReady()?'disabled':''}>✨ 補滿這天空格</button><button class="btn ghost sm" data-act="aiLegs" ${AI!=='ok'?'disabled':''}>🚃 ${freeOK()?'AI ':''}重新估算交通</button></div></div>`;
+  <div class="daybar"><button class="btn ghost sm" data-act="dayDrive">${driveOn(t,day)?'🚃 這天改搭車':'🚗 這天自駕'}</button><button class="btn ghost sm" data-act="fillDay" ${!planReady()?'disabled':''}>✨ 補滿這天空格</button><button class="btn ghost sm" data-act="aiLegs" ${AI!=='ok'?'disabled':''}>🚃 ${freeOK()?'AI ':''}重新估算交通</button></div></div>`;
   h+=dayTransit(t,di);
+  for(const m of midOn(t,di))if(midEarly(m))h+=midCard(m,null);
   if(di===0&&hasArr(t)){const f=t.flights.arr,a=AIRPORTS[f.ap];h+=`<div class="card flight"><div class="row"><span style="font-size:26px">🛬</span><div class="grow"><b>${f.time?esc(f.time)+' ':''}抵達 ${a[0]}</b><div class="tiny">${f.no?esc(f.no)+'・':''}出關＋領行李約 1 小時${f.time?'，大約 '+hm(toMin(f.time)+60)+' 出發':''}</div></div>${f.no?`<a class="linkbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${enc(f.no+' 航班動態')}">查航班</a>`:''}</div></div>`;}
   let prev=startPrev(t,day);let lastFoodEnd=null;const blocked=blockedSlots(t,di);
   for(const [k,label,emo] of SLOTS){
@@ -2202,7 +2237,8 @@ function vPlan(t){
     h+=`<div class="slot"><div class="slot-h">${emo} ${label}<button class="add" data-act="addPlace" data-slot="${k}" aria-label="新增">＋</button></div>`;
     if(!list.length&&blocked.has(k)){
       const tv=travelOf(t,di);
-      h+=`<div class="tiny" style="padding:6px 4px">${di===0&&hasArr(t)&&k!=='evening'&&k!=='dinner'?'🛬 這段時間還在飛機上／入境中':tv&&(k==='morning'||k==='lunch')?`🚄 這段時間在移動：${esc(tv.fromName)} → ${esc(tv.toName)}（約 ${Math.round(tv.minutes/6)/10} 小時）`:'🛫 這段時間要準備去機場'}</div>`;
+      const em=midOn(t,di).find(midEarly);
+      h+=`<div class="tiny" style="padding:6px 4px">${em&&k!=='evening'&&k!=='dinner'?'🛩️ 這段時間在搭飛機：'+AIRPORTS[em.from][0]+' → '+AIRPORTS[em.to][0]:di===0&&hasArr(t)&&k!=='evening'&&k!=='dinner'?'🛬 這段時間還在飛機上／入境中':tv&&(k==='morning'||k==='lunch')?`${driveOn(t,day)?'🚗':'🚄'} 這段時間在移動：${esc(tv.fromName)} → ${esc(tv.toName)}（約 ${Math.round(tv.minutes/6)/10} 小時）`:'🛫 這段時間要準備去機場'}</div>`;
     }else if(!list.length){
       h+=`<button class="empty" data-act="slotMenu" data-slot="${k}">＋ 空著・自己加，或讓 ${esc(activeGuide().name.replace(/（.*）/,''))} 推薦</button>`;
     }
@@ -2230,6 +2266,7 @@ function vPlan(t){
     if(info.last){const pseudo=Object.assign({},info.ap,{leg:info.leg});const tt=Object.assign({},times,{dep:{s:info.arrive}});h+=legHTML(t,day,info.last,pseudo,tt);}
     h+=`<div class="card flight" style="${info.late?'border:2px solid #F2A08A':''}"><div class="row"><span style="font-size:26px">🛫</span><div class="grow"><b>${esc(f.time)} 從 ${a[0]} 起飛</b><div class="tiny">${f.no?esc(f.no)+'・':''}${f.type==='dom'?'國內線':'國際線'}，建議 ${hm(info.deadline)} 前到機場</div>
     ${info.arrive!=null?(info.late?`<div style="color:#C2410C;font-size:13px;margin-top:4px">⚠️ 照這個行程大約 ${hm(info.arrive)} 才到機場，會來不及！建議刪掉或縮短最後的行程。</div>`:`<div style="color:var(--deep);font-size:13px;margin-top:4px">✅ 大約 ${hm(info.arrive)} 到機場，時間來得及</div>`):''}</div>${f.no?`<a class="linkbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${enc(f.no+' 航班動態')}">查航班</a>`:''}</div></div>`;}
+  {const mi=midDepInfo(t,di);if(mi){if(mi.last){const pseudo=Object.assign({},mi.ap,{leg:mi.leg});const tt=Object.assign({},times);tt[pseudo.id]={s:mi.arrive};h+=legHTML(t,day,mi.last,pseudo,tt);}h+=midCard(mi.m,mi);}}
   h+=`<div class="tiny" style="margin:14px 0">時間與費用為預估；「查換乘」會打開 Yahoo!乗換案内看實際班次。🚕 為計程車估價（跳表，不含過路費、叫車費、深夜加成）。</div></div>`;
   return h;
 }
@@ -2313,7 +2350,8 @@ function vMap(t){
     const si=startInfo(t,d);if(si&&si.kind==='air')pts.push({it:si.pt,day:i,n:'✈'});else if(si&&si.pt)pts.push({it:Object.assign({},si.pt,{id:'ms'+i}),day:i,n:'🏨'});
     dayItems(d).forEach((it,j)=>{if(isNum(it.lat)&&isNum(it.lng))pts.push({it,day:i,n:j+1});});
     const ei=endInfo(t,d);if(ei&&ei.pt)pts.push({it:Object.assign({},ei.pt,{id:'me'+i}),day:i,n:'🏨'});
-    if(i===t.days.length-1&&hasDep(t))pts.push({it:apPt(t.flights.dep.ap,'ap-dep'),day:i,n:'✈'});});
+    if(i===t.days.length-1&&hasDep(t))pts.push({it:apPt(t.flights.dep.ap,'ap-dep'),day:i,n:'✈'});
+    for(const m of midOn(t,i))if(!midEarly(m))pts.push({it:apPt(m.from,'mid-dep'+i),day:i,n:'✈'});});
   if(!pts.length){h+=`<div class="card muted" style="text-align:center;padding:30px">還沒有可以顯示的地點～<br>先排行程，或按「一鍵排行程」</div></div>`;return h;}
   const W=360,H=400,P=56;
   let minLa=Infinity,maxLa=-Infinity,minLo=Infinity,maxLo=-Infinity;
@@ -2358,9 +2396,9 @@ function costData(t){
   const add=(i,s)=>{trans+=s.total;perDay[i].t+=s.total;for(const k in s.parts){byMode[k]=(byMode[k]||0)+s.parts[k];perDay[i].m[k]=(perDay[i].m[k]||0)+s.parts[k];}};
   const ref=(a,b)=>{const tx=taxi(a,b,t.region);if(tx){taxiLo+=tx.lo;taxiHi+=tx.hi;}};
   t.days.forEach((d,i)=>{perDay.push({t:0,s:0,m:{}});let prev=null;
-    for(const it of dayItems(d)){if(it.leg){const from=prev||startPt(t,d);add(i,legSpend(t,from,it,it.leg));if(it.useTaxi&&from)taxiN++;if(from&&it.leg.mode!=='walk')ref(from,it);}spend+=it.cost||0;perDay[i].s+=it.cost||0;prev=it;}});
-  t.days.forEach((d,i)=>{const ei=endInfo(t,d);if(ei&&ei.leg&&ei.last){add(i,legSpend(t,null,null,ei.leg));if(ei.leg.mode!=='walk')ref(ei.last,ei.pt);}});
-  const dinfo=depInfo(t);if(dinfo&&dinfo.leg&&dinfo.last){add(perDay.length-1,legSpend(t,null,null,dinfo.leg));if(dinfo.leg.mode!=='walk')ref(dinfo.last,dinfo.ap);}
+    for(const it of dayItems(d)){if(it.leg&&!driveOn(t,d)){const from=prev||startPt(t,d);add(i,legSpend(t,from,it,it.leg));if(it.useTaxi&&from)taxiN++;if(from&&it.leg.mode!=='walk')ref(from,it);}spend+=it.cost||0;perDay[i].s+=it.cost||0;prev=it;}});
+  t.days.forEach((d,i)=>{const ei=endInfo(t,d);if(ei&&ei.leg&&ei.last&&!driveOn(t,d)){add(i,legSpend(t,null,null,ei.leg));if(ei.leg.mode!=='walk')ref(ei.last,ei.pt);}});
+  const dinfo=depInfo(t);if(dinfo&&dinfo.leg&&dinfo.last&&!driveOn(t,dinfo.day)){add(perDay.length-1,legSpend(t,null,null,dinfo.leg));if(dinfo.leg.mode!=='walk')ref(dinfo.last,dinfo.ap);}
   return {byMode,trans,spend,taxiLo,taxiHi,taxiN,perDay};
 }
 function dayTransit(t,i){
@@ -2462,16 +2500,34 @@ function flightFind(no){
   return _FIDX[flNorm(no)]||null;}
 const apName=c=>AIRPORTS[c]?AIRPORTS[c][0]:TW_AP[c]?TW_AP[c]+'機場':c;
 function apOptions(sel){return `<option value="">未定</option>`+Object.entries(AIRPORTS).map(([k,a])=>`<option value="${k}" ${k===sel?'selected':''}>${a[0]}（${k}）</option>`).join('');}
-function timeSel(id,v){v=/^\d{1,2}:\d{2}$/.test(v||'')?v.padStart(5,'0'):'';const [h,m]=v?v.split(':'):['',''];
+function timeSel(id,v,attr){v=/^\d{1,2}:\d{2}$/.test(v||'')?v.padStart(5,'0'):'';const [h,m]=v?v.split(':'):['',''];
   const ms=Array.from({length:12},(_,i)=>String(i*5).padStart(2,'0'));if(m&&!ms.includes(m))ms.push(m),ms.sort();
-  return `<span class="row" style="gap:4px;flex:0 0 auto;align-items:center"><select class="inp" data-th="${id}" onchange="timeSelPick('${id}')" style="width:76px;padding:8px 6px"><option value="">--</option>${Array.from({length:24},(_,i)=>String(i).padStart(2,'0')).map(x=>`<option ${x===h?'selected':''}>${x}</option>`).join('')}</select><b>:</b><select class="inp" data-tm="${id}" onchange="timeSelPick('${id}')" style="width:68px;padding:8px 6px"><option value="">--</option>${ms.map(x=>`<option ${x===m?'selected':''}>${x}</option>`).join('')}</select><input type="hidden" id="${id}" value="${v}"></span>`;}
-function timeSelPick(id){const h=document.querySelector(`[data-th="${id}"]`),m=document.querySelector(`[data-tm="${id}"]`),el=document.getElementById(id);if(!h||!m||!el)return;if(h.value&&!m.value)m.value='00';el.value=h.value?h.value+':'+(m.value||'00'):'';}
+  return `<span class="row" style="gap:4px;flex:0 0 auto;align-items:center"><select class="inp" data-th="${id}" onchange="timeSelPick('${id}')" style="width:76px;padding:8px 6px"><option value="">--</option>${Array.from({length:24},(_,i)=>String(i).padStart(2,'0')).map(x=>`<option ${x===h?'selected':''}>${x}</option>`).join('')}</select><b>:</b><select class="inp" data-tm="${id}" onchange="timeSelPick('${id}')" style="width:68px;padding:8px 6px"><option value="">--</option>${ms.map(x=>`<option ${x===m?'selected':''}>${x}</option>`).join('')}</select><input type="hidden" id="${id}" value="${v}" ${attr||''}></span>`;}
+function timeSelPick(id){const h=document.querySelector(`[data-th="${id}"]`),m=document.querySelector(`[data-tm="${id}"]`),el=document.getElementById(id);if(!h||!m||!el)return;if(h.value&&!m.value)m.value='00';el.value=h.value?h.value+':'+(m.value||'00'):'';el.dispatchEvent(new Event('change',{bubbles:true}));}
 function setTimeVal(el,v){if(!el)return;v=String(v||'').padStart(5,'0');el.value=v;const h=document.querySelector(`[data-th="${el.id}"]`),m=document.querySelector(`[data-tm="${el.id}"]`);if(!h||!m)return;const [hh,mm]=v.split(':');h.value=hh;if(![...m.options].some(o=>o.value===mm))m.add(new Option(mm,mm));m.value=mm;}
 function flightFields(f){f=f||{};const a=f.arr||{},d=f.dep||{};
   return `<div class="field"><label>🛬 去程：第一天幾點抵達哪個機場？（選填）</label><div class="row"><select class="inp grow" id="fArrAp">${apOptions(a.ap)}</select>${timeSel('fArrTime',a.time||'')}</div><div class="row" style="margin-top:8px"><input class="inp grow" id="fArrNo" value="${esc(a.no||'')}" placeholder="航班號碼，例如 CI152" onchange="A.flightLookup({dataset:{d:'arr'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="arr">🔍 查時間</button></div><div class="tiny hidden" id="fArrInfo" style="margin-top:6px"></div></div>
-  <div class="field"><label>🛫 回程：最後一天幾點從哪個機場起飛？（選填）</label><div class="row"><select class="inp grow" id="fDepAp">${apOptions(d.ap)}</select>${timeSel('fDepTime',d.time||'')}</div><div class="row" style="margin-top:8px"><input class="inp grow" id="fDepNo" value="${esc(d.no||'')}" placeholder="航班號碼，例如 CI153" onchange="A.flightLookup({dataset:{d:'dep'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="dep">🔍 查時間</button><select class="inp" id="fDepType" style="width:110px"><option value="intl" ${d.type!=='dom'?'selected':''}>國際線</option><option value="dom" ${d.type==='dom'?'selected':''}>國內線</option></select></div><div class="tiny hidden" id="fDepInfo" style="margin-top:6px"></div></div>
+  <div class="field"><label>🛫 回程：最後一天幾點從哪個機場起飛？（選填）</label><div class="row"><select class="inp grow" id="fDepAp">${apOptions(d.ap)}</select>${timeSel('fDepTime',d.time||'')}</div><div class="row" style="margin-top:8px"><input class="inp grow" id="fDepNo" value="${esc(d.no||'')}" placeholder="航班號碼，例如 CI153" onchange="A.flightLookup({dataset:{d:'dep'}})"><button class="btn ghost sm" data-act="flightLookup" data-d="dep">🔍 查時間</button></div><div class="tiny hidden" id="fDepInfo" style="margin-top:6px"></div></div>
+  <div class="field"><label>🛩️ 旅途中轉搭飛機（選填，例如第 3 天從東京飛札幌）</label><div id="midFlights">${(f.mid||[]).map(m=>midRowHTML(m)).join('')}</div><button class="btn ghost sm" data-act="addMidFlight">＋ 追加一段航班</button></div>
   <div class="tiny" style="margin:-6px 0 12px">輸入航班號碼會自動查出時間和機場${AI==='ok'?'':'（要有 AI 才能自動查；沒有的話會幫你打開 Google 搜尋）'}，查到後請再確認一次。</div>`;}
-function readFlights(){const g=id=>(($('#'+id)||{}).value||'').trim();return {arr:{ap:g('fArrAp'),time:g('fArrTime'),no:g('fArrNo').toUpperCase()},dep:{ap:g('fDepAp'),time:g('fDepTime'),no:g('fDepNo').toUpperCase(),type:g('fDepType')||'intl'}};}
+let _midK=0;
+function midRowHTML(m){m=m||{};const k='m'+(++_midK);
+  return `<div class="mid-row" data-k="${k}" style="background:var(--bg);border-radius:14px;padding:10px;margin-bottom:8px">
+  <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tiny">第</span><select class="inp" id="mfDay_${k}" style="width:64px;padding:8px">${Array.from({length:14},(_,i)=>`<option value="${i}" ${i===(m.day??1)?'selected':''}>${i+1}</option>`).join('')}</select><span class="tiny">天</span><input class="inp grow" id="mfNo_${k}" value="${esc(m.no||'')}" placeholder="航班號碼，例如 JL503" style="min-width:120px" onchange="A.midLookup({dataset:{k:'${k}'}})"><button class="btn ghost sm" data-act="midLookup" data-k="${k}">🔍 查時間</button><button class="icon-btn" data-act="rmMidFlight" data-k="${k}" style="width:32px;height:32px;font-size:13px" aria-label="刪除這段">✕</button></div>
+  <div class="row" style="margin-top:8px"><span class="tiny" style="width:30px">起飛</span><select class="inp grow" id="mfFrom_${k}">${apOptions(m.from)}</select>${timeSel('mfDep_'+k,m.dep||'')}</div>
+  <div class="row" style="margin-top:8px"><span class="tiny" style="width:30px">抵達</span><select class="inp grow" id="mfTo_${k}">${apOptions(m.to)}</select>${timeSel('mfArr_'+k,m.arr||'')}</div>
+  <div class="tiny hidden" id="mfInfo_${k}" style="margin-top:6px"></div></div>`;}
+function readMid(){return [...document.querySelectorAll('.mid-row')].map(r=>{const k=r.dataset.k,g=id=>((document.getElementById(id+'_'+k)||{}).value||'').trim();
+  return {day:+g('mfDay'),no:g('mfNo').toUpperCase(),from:g('mfFrom'),dep:g('mfDep'),to:g('mfTo'),arr:g('mfArr')};}).filter(m=>AIRPORTS[m.from]&&AIRPORTS[m.to]&&m.from!==m.to);}
+function readFlights(){const g=id=>(($('#'+id)||{}).value||'').trim();return {arr:{ap:g('fArrAp'),time:g('fArrTime'),no:g('fArrNo').toUpperCase()},dep:{ap:g('fDepAp'),time:g('fDepTime'),no:g('fDepNo').toUpperCase(),type:'intl'},mid:readMid()};}
+const AP_CITY={NRT:'東京',HND:'東京',KIX:'大阪',ITM:'大阪',UKB:'神戶',NGO:'名古屋',FUK:'福岡',OKA:'那霸',CTS:'札幌',SDJ:'仙台',KOJ:'鹿兒島',KMJ:'熊本',KMI:'宮崎',OIT:'大分',NGS:'長崎',HIJ:'廣島',OKJ:'岡山',TAK:'高松',MYJ:'松山',KCZ:'高知',KMQ:'金澤',TOY:'富山',FSZ:'靜岡',IBR:'水戶',AOJ:'青森',AKJ:'旭川',HKD:'函館',AXT:'秋田',KIJ:'新潟',ISG:'石垣',MMY:'宮古島',SHI:'宮古島',HSG:'佐賀',YGJ:'米子',FKS:'福島'};
+// 中途航班飛去的城市，如果「想去哪裡」沒寫，自動補上（例如飛札幌就加「札幌」）
+function midAddCities(t){
+  if(t.dayCity&&t.dayCity.length)return;const ms=midList(t);if(!ms.length)return;
+  const key=n=>{const h=JP_PLACES.find(n);return h?h.name:n;};
+  const names=NegiOSM.splitCities(t.dest);const ks=names.map(key);
+  for(const m of ms)for(const ap of [m.from,m.to]){const c=AP_CITY[ap];if(c&&!ks.includes(key(c))){names.push(c);ks.push(key(c));}}
+  t.dest=names.join('+');}
 function stayRowHTML(from,nights){
   return `<div class="stay-row" style="background:var(--bg);border-radius:14px;padding:10px;margin-bottom:8px">
   <div class="row"><input class="inp grow" data-k="name" placeholder="住宿名稱或地點，例如：難波站附近的飯店"><button class="icon-btn" data-act="rmStayRow" style="width:32px;height:32px;font-size:13px" aria-label="刪除這間">✕</button></div>
@@ -2493,6 +2549,26 @@ const A={
   goHome:()=>{pickHome();S.view='home';S.tripId=null;render.keep=false;render();window.scrollTo(0,0);},
   closeSheet,
   aiSave:()=>{const key=$('#aiKey').value.trim();const old=aiCfg();const c={provider:chipVal('aiProv')[0]||'gemini',key,model:cleanModel($('#aiModel').value),autoModel:old.key===key?old.autoModel:''};setAiCfg(c);if(AI_MODE!=='claude')useKeyAI();render();toast(key?'AI 金鑰存好了':'已清除金鑰');},
+  addMidFlight:()=>{const box=$('#midFlights');if(box)box.insertAdjacentHTML('beforeend',midRowHTML({day:Math.min(2,Math.max(1,(+(($('#nDays')||{}).value||3))-2))}));},
+  rmMidFlight:el=>{const r=document.querySelector(`.mid-row[data-k="${el.dataset.k}"]`);if(r)r.remove();},
+  midLookup:async el=>{
+    const k=el.dataset.k,$k=id=>document.getElementById(id+'_'+k);const inp=$k('mfNo');if(!inp)return;
+    const no=inp.value.trim().toUpperCase().replace(/\s+/g,'');if(!no)return toast('先輸入航班號碼');
+    const info=$k('mfInfo');const say=m=>{if(info){info.classList.remove('hidden');info.textContent=m;}};
+    const fill=(from,dep,to,arr)=>{if(AIRPORTS[from])$k('mfFrom').value=from;if(AIRPORTS[to])$k('mfTo').value=to;if(/^\d{1,2}:\d{2}$/.test(dep||''))setTimeVal($k('mfDep'),dep);if(/^\d{1,2}:\d{2}$/.test(arr||''))setTimeVal($k('mfArr'),arr);};
+    const hit=flightFind(no);
+    if(hit){fill(hit.from,hit.dep,hit.to,hit.arr);return say(`✈️ ${no}：${apName(hit.from)} ${hit.dep} → ${apName(hit.to)} ${hit.arr}，已幫你填好。請再跟機票確認一次`);}
+    if(AI!=='ok'){window.open('https://www.google.com/search?q='+encodeURIComponent(no+' 航班 時刻表'),'_blank');return say('內建航班表只有台日之間的航班，已幫你打開 Google 查「'+no+'」，查到後把機場和時間選好就行');}
+    say('🔍 正在查 '+no+' 的時間…（約 10–30 秒）');
+    const prompt=`請上網查詢日本國內線航班 ${no} 的定期班表。只回 JSON，不要其他文字：
+{"found":true,"from":"出發機場三碼","to":"抵達機場三碼","dep":"HH:MM","arr":"HH:MM"}
+時間是當地時間（24 小時制）。查不到或不確定就回 {"found":false}。`;
+    try{let r;if(AI_MODE==='key')r=parseLoose(await apiCall(prompt,{search:true,timeout:60000}));else r=await askJSON(prompt.replace('請上網查詢','請依你的知識回答'),{tier:'default'});
+      if(!r||!r.found)return say('查不到 '+no+'，請自己選機場和時間');
+      fill(String(r.from||'').toUpperCase(),String(r.dep||'').slice(0,5),String(r.to||'').toUpperCase(),String(r.arr||'').slice(0,5));say(`✈️ ${no}：${apName(String(r.from||'').toUpperCase())} ${r.dep} → ${apName(String(r.to||'').toUpperCase())} ${r.arr}（AI 查的，請再確認）`);
+    }catch(e){say('查不到 '+no+'，請自己選機場和時間');}
+  },
+  dayDrive:()=>{const t=curTrip();const d=t.days[S.dayIdx];if(!d)return;d.drive=!driveOn(t,d);saveTrip(t);render();toast(d.drive?'這天改成自駕，不算車錢':'這天改回搭車');},
   flightLookup:async el=>{
     const d=el.dataset.d,isArr=d==='arr';const inp=$(isArr?'#fArrNo':'#fDepNo');if(!inp)return;
     const no=inp.value.trim().toUpperCase().replace(/\s+/g,'');if(!no)return toast('先輸入航班號碼');
@@ -2507,7 +2583,7 @@ const A={
       if(wrong){return say(`✈️ ${AL_NAME[no.slice(0,2)]||''} ${no}：${apName(hit.from)} ${hit.dep} → ${apName(hit.to)} ${hit.arr}\n⚠️ 這班是${isArr?'從日本飛回台灣':'從台灣飛去日本'}的，好像填反了，${isArr?'應該填在下面「回程」':'應該填在上面「去程」'}`);}
       const sel=$(isArr?'#fArrAp':'#fDepAp'),ti=$(isArr?'#fArrTime':'#fDepTime');
       if(sel)sel.value=jpSide;setTimeVal(ti,isArr?hit.arr:hit.dep);
-      if(!isArr&&$('#fDepType'))$('#fDepType').value=AIRPORTS[hit.to]?'dom':'intl';
+
       return say(`✈️ ${AL_NAME[no.slice(0,2)]||''} ${no}${hit.op?'（由 '+hit.op+' 實際飛行）':''}：${apName(hit.from)} ${hit.dep} → ${apName(hit.to)} ${hit.arr}${hit.next?'（隔天）':''}${hit.note?'\n📝 '+hit.note:''}\n已幫你填好${isArr?'抵達':'起飛'}機場和時間。這是航班表的固定時間，偶爾會因季節調整，請再跟機票確認一次`);
     }
     if(AI!=='ok'){window.open('https://www.google.com/search?q='+encodeURIComponent(no+' 航班 時刻表'),'_blank');return say('內建航班表裡沒有「'+no+'」，已幫你打開 Google 查，查到後把時間填上面就好');}
@@ -2523,7 +2599,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
       const ap=isArr?String(r.to||'').toUpperCase():String(r.from||'').toUpperCase(),tm=String(isArr?r.arr:r.dep||'').slice(0,5);
       const sel=$(isArr?'#fArrAp':'#fDepAp'),ti=$(isArr?'#fArrTime':'#fDepTime');
       if(AIRPORTS[ap]&&sel)sel.value=ap;if(/^\d{1,2}:\d{2}$/.test(tm)&&ti)setTimeVal(ti,tm);
-      if(!isArr&&$('#fDepType'))$('#fDepType').value=AIRPORTS[String(r.to||'').toUpperCase()]?'dom':'intl';
+
       say(`✈️ ${r.airline||''} ${no}：${r.from||'?'} ${r.dep||'?'} → ${r.to||'?'} ${r.arr||'?'}${r.days?'（'+r.days+'）':''}${AIRPORTS[ap]?'':'\n⚠️ '+ap+' 不在機場清單裡，請自己選機場'}\n${AI_MODE==='key'?'上網查到的，':'AI 依記憶回答的，'}請再跟機票確認一次`);
     }catch(e){say('內建航班表裡沒有「'+no+'」，AI 也查不到（'+aiErrText(e)+'）。可以到 Google 搜尋「'+no+' 航班」，再把時間填上面');}
   },
@@ -2586,6 +2662,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
         t.dayCity=dc;
         const names=[...new Set(dc)];const inDest=NegiOSM.splitCities(t.dest);if(names.some(x=>!inDest.includes(x)))t.dest=names.join('+');}t.mustEat=w.mustEat||[];t.local=!!w.local;
       if(w.must.length)t.mustGo=[t.mustGo,...w.must.filter(x=>!t.mustGo.includes(x))].filter(Boolean).join('、');if(w.avoid.length)t.avoid=w.avoid;}
+    t.drive=chipVal('nDrive')[0]==='1';midAddCities(t);
     S.trips.unshift(t);saveTrip(t);S.tripId=t.id;S.view='trip';S.tab='plan';S.dayIdx=0;S.mapDay=-1;S.mapSel=null;S.food={q:'',day:0,list:null};S.passText='';render.keep=false;render();window.scrollTo(0,0);
     const go=el.dataset.ai==='1';
     if(t.stays.length&&freeOK()&&go){aiPlan({mode:'all'});}
@@ -2675,7 +2752,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
     ${flightFields(t.flights)}
     <div class="field"><label>跟誰去</label><div class="chips" data-single="1" id="eGroup">${Object.entries(GROUPS).map(([k,v])=>`<button class="chip ${t.group===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="field"><label>喜歡什麼</label><div class="chips" id="eTags">${TAGS.map(x=>`<button class="chip ${(t.tags||[]).includes(x)?'on':''}" data-act="chip" data-v="${x}">${x}</button>`).join('')}</div></div>
-    <div class="field"><label>步調</label><div class="chips" data-single="1" id="ePace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${t.pace===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
+    <div class="field"><label>步調</label><div class="chips" data-single="1" id="ePace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${t.pace===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div><div class="field"><label>交通方式（也可以在每一天單獨切換）</label><div class="chips" data-single="1" id="eDrive"><button class="chip ${!t.drive?'on':''}" data-act="chip" data-v="0">🚃 搭車</button><button class="chip ${t.drive?'on':''}" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button></div></div>
     <div class="field"><label>計程車費率地區</label><div class="chips" data-single="1" id="eRegion">${Object.entries(fares()).map(([k,v])=>`<button class="chip ${t.region===k?'on':''}" data-act="chip" data-v="${k}">${esc(v.name)}</button>`).join('')}</div></div>
     <div class="field"><label>一定要去</label><textarea class="inp" id="eMust">${esc(t.mustGo||'')}</textarea></div>
     <div class="field"><label>旅伴嚮導</label><div class="chips" data-single="1" id="eGuide">${allGuides().map(g=>`<button class="chip ${t.guide===g.id?'on':''}" data-act="chip" data-v="${g.id}"><span class="swatch" style="background:${g.color}"></span>${esc(g.name)}</button>`).join('')}</div></div>
@@ -2690,7 +2767,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
     const n=Math.min(14,Math.max(1,+$('#nDays').value||1));
     if(n>t.days.length)while(t.days.length<n)t.days.push({hotel:'',slots:emptySlots()});
     else if(n<t.days.length){const cut=t.days.slice(n);if(cut.some(d=>dayItems(d).length)){toast('後面幾天還有行程，已保留；請先刪掉那幾天的地點');}else t.days.length=n;}
-    const oldAp=t.flights&&t.flights.arr&&t.flights.arr.ap;t.flights=readFlights();
+    const oldAp=t.flights&&t.flights.arr&&t.flights.arr.ap;t.flights=readFlights();t.drive=chipVal('eDrive')[0]==='1';midAddCities(t);
     if(oldAp!==t.flights.arr.ap){const f0=dayItems(t.days[0])[0];if(f0)f0.leg=null;}
     t.days.forEach(d=>relinkLegs(t,d));
     if(S.dayIdx>=t.days.length)S.dayIdx=0;saveTrip(t);closeSheet();render();toast('已儲存');
