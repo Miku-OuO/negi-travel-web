@@ -2164,7 +2164,7 @@ function vNew(){
   <div class="field"><label>跟誰去？</label><div class="chips" data-single="1" id="nGroup">${Object.entries(GROUPS).map(([k,v],i)=>`<button class="chip ${i===1?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
   <div class="field"><label>人數</label><div class="stepper"><button data-act="step" data-t="nPeople" data-d="-1">－</button><input id="nPeople" value="2" inputmode="numeric"><button data-act="step" data-t="nPeople" data-d="1">＋</button></div></div>
   <div class="field"><label>喜歡什麼？（可複選）</label><div class="chips" id="nTags">${TAGS.map(x=>`<button class="chip ${x==='美食'?'on':''}" data-act="chip" data-v="${x}">${x}</button>`).join('')}</div></div>
-  <div class="field"><label>步調</label><div class="chips" data-single="1" id="nPace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${k==='normal'?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div><div class="field"><label>交通方式</label><div class="chips" data-single="1" id="nDrive"><button class="chip on" data-act="chip" data-v="0">🚃 搭車（地鐵、JR、新幹線）</button><button class="chip" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button></div></div>
+  <div class="field"><label>步調</label><div class="chips" data-single="1" id="nPace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${k==='normal'?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div><div class="field"><label>交通方式</label><div class="chips" data-single="1" id="nDrive"><button class="chip on" data-act="chip" data-v="0">🚃 搭車</button><button class="chip" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button><button class="chip" data-act="chip" data-v="mix">🔀 混搭</button></div>${driveDaysBox(5,[],false)}</div>
   <div class="field"><label>💬 想要怎麼樣的行程？（直接打字，可留空）</label><textarea class="inp" id="nWish" rows="3" placeholder="例如：想吃拉麵跟燒肉，每天晚上要去夾娃娃，不想太早起，一定要去清水寺" oninput="const r=parseWish(this.value),p=wishSummary(r),b=document.getElementById('nWishRes');b.textContent=p.length?'✅ 聽懂了：'+p.join('｜'):(this.value.trim()?(AI==='ok'?'🤖 這些關鍵字我認不出來，排行程時會交給 AI 看':'這些我還認不出來，可以換個說法，例如「想吃拉麵」「不想太早起」'):'');"></textarea><div class="tiny" id="nWishRes" style="margin-top:6px;line-height:1.7"></div></div>
   <div class="field"><label>一定要去的地方（可留空，用空白或頓號分開）</label><textarea class="inp" id="nMust" placeholder="例如：晴空塔、築地場外市場"></textarea></div>
   <div class="field"><label>旅伴嚮導</label><div class="chips" data-single="1" id="nGuide">${allGuides().map(g=>`<button class="chip ${g.id===(S.homeGuide||S.profile.activeGuide)?'on':''}" data-act="chip" data-v="${g.id}"><span class="swatch" style="background:${g.color}"></span>${esc(g.name)}</button>`).join('')}</div></div>
@@ -2541,6 +2541,11 @@ function readStayRows(n){
     out.push({id:uid(),name,nameJa:'',type:STAY_TYPES[g('type')]?g('type'):'hotel',from,nights,lat:null,lng:null});});
   return out;
 }
+function driveDaysBox(n,sel,show){return `<div id="driveDaysBox" class="${show?'':'hidden'}" style="margin-top:8px"><div class="tiny" style="margin-bottom:6px">點選要自駕的那幾天（沒選的那幾天搭車）：</div><div class="chips" id="driveDays">${Array.from({length:n},(_,i)=>`<button class="chip ${sel.includes(i)?'on':''}" data-act="chip" data-v="${i}">第 ${i+1} 天</button>`).join('')}</div></div>`;}
+function driveDaysSync(show){const b=$('#driveDaysBox');if(!b)return;const n=Math.min(14,Math.max(1,+(($('#nDays')||{}).value)||1));const sel=chipVal('driveDays').map(Number);b.outerHTML=driveDaysBox(n,sel,show);}
+function applyDrive(t,mode){const sel=chipVal('driveDays').map(Number);
+  if(mode==='mix'){t.drive=false;t.days.forEach((d,i)=>{d.drive=sel.includes(i);});}
+  else{t.drive=mode==='1';t.days.forEach(d=>{delete d.drive;});}}
 function chipVal(id){return [...document.querySelectorAll('#'+id+' .chip.on')].map(c=>c.dataset.v);}
 
 /* ===================== 動作 ===================== */
@@ -2646,8 +2651,9 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
   },
   stayAdvice:()=>aiStayAdvice(),
   aiStop:()=>{if(aiCtl)aiCtl.abort();hideAI();},
-  step:el=>{const i=$('#'+el.dataset.t);const d=+el.dataset.d;const id=el.dataset.t;const lim={nDays:[1,14],nPeople:[1,20],pStay:[10,600],sNights:[1,13]}[id]||[0,999];i.value=Math.min(lim[1],Math.max(lim[0],(+i.value||0)+d));},
+  step:el=>{const i=$('#'+el.dataset.t);const d=+el.dataset.d;const id=el.dataset.t;const lim={nDays:[1,14],nPeople:[1,20],pStay:[10,600],sNights:[1,13]}[id]||[0,999];i.value=Math.min(lim[1],Math.max(lim[0],(+i.value||0)+d));if(id==='nDays'&&$('#driveDaysBox')&&!$('#driveDaysBox').classList.contains('hidden'))driveDaysSync(true);},
   chip:el=>{const box=el.parentElement;if(box.dataset.single){box.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));el.classList.add('on');}else el.classList.toggle('on');
+    if(box.id==='nDrive'||box.id==='eDrive')driveDaysSync(el.dataset.v==='mix');
     if(box.id==='nGuide'){S.homeGuide=el.dataset.v;const g=guideOf(el.dataset.v);const w=$('#goImg');if(w)w.innerHTML=btnImg(g);document.documentElement.style.setProperty('--main',g.color);}},
   createTrip:el=>{
     const dest=$('#nDest').value.trim();if(!dest)return toast('先填想去哪裡喔');
@@ -2662,7 +2668,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
         t.dayCity=dc;
         const names=[...new Set(dc)];const inDest=NegiOSM.splitCities(t.dest);if(names.some(x=>!inDest.includes(x)))t.dest=names.join('+');}t.mustEat=w.mustEat||[];t.local=!!w.local;
       if(w.must.length)t.mustGo=[t.mustGo,...w.must.filter(x=>!t.mustGo.includes(x))].filter(Boolean).join('、');if(w.avoid.length)t.avoid=w.avoid;}
-    t.drive=chipVal('nDrive')[0]==='1';midAddCities(t);
+    applyDrive(t,chipVal('nDrive')[0]||'0');midAddCities(t);
     S.trips.unshift(t);saveTrip(t);S.tripId=t.id;S.view='trip';S.tab='plan';S.dayIdx=0;S.mapDay=-1;S.mapSel=null;S.food={q:'',day:0,list:null};S.passText='';render.keep=false;render();window.scrollTo(0,0);
     const go=el.dataset.ai==='1';
     if(t.stays.length&&freeOK()&&go){aiPlan({mode:'all'});}
@@ -2752,7 +2758,8 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
     ${flightFields(t.flights)}
     <div class="field"><label>跟誰去</label><div class="chips" data-single="1" id="eGroup">${Object.entries(GROUPS).map(([k,v])=>`<button class="chip ${t.group===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>
     <div class="field"><label>喜歡什麼</label><div class="chips" id="eTags">${TAGS.map(x=>`<button class="chip ${(t.tags||[]).includes(x)?'on':''}" data-act="chip" data-v="${x}">${x}</button>`).join('')}</div></div>
-    <div class="field"><label>步調</label><div class="chips" data-single="1" id="ePace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${t.pace===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div><div class="field"><label>交通方式（也可以在每一天單獨切換）</label><div class="chips" data-single="1" id="eDrive"><button class="chip ${!t.drive?'on':''}" data-act="chip" data-v="0">🚃 搭車</button><button class="chip ${t.drive?'on':''}" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button></div></div>
+    <div class="field"><label>步調</label><div class="chips" data-single="1" id="ePace">${Object.entries(PACE).map(([k,v])=>`<button class="chip ${t.pace===k?'on':''}" data-act="chip" data-v="${k}">${v[0]}</button>`).join('')}</div></div>${(()=>{const dd=t.days.map(d=>driveOn(t,d));const md=dd.every(x=>x)?'1':dd.every(x=>!x)?'0':'mix';
+    return `<div class="field"><label>交通方式</label><div class="chips" data-single="1" id="eDrive"><button class="chip ${md==='0'?'on':''}" data-act="chip" data-v="0">🚃 搭車</button><button class="chip ${md==='1'?'on':''}" data-act="chip" data-v="1">🚗 自駕（不算車錢）</button><button class="chip ${md==='mix'?'on':''}" data-act="chip" data-v="mix">🔀 混搭</button></div>${driveDaysBox(t.days.length,dd.map((x,i)=>x?i:-1).filter(i=>i>=0),md==='mix')}</div>`;})()}
     <div class="field"><label>計程車費率地區</label><div class="chips" data-single="1" id="eRegion">${Object.entries(fares()).map(([k,v])=>`<button class="chip ${t.region===k?'on':''}" data-act="chip" data-v="${k}">${esc(v.name)}</button>`).join('')}</div></div>
     <div class="field"><label>一定要去</label><textarea class="inp" id="eMust">${esc(t.mustGo||'')}</textarea></div>
     <div class="field"><label>旅伴嚮導</label><div class="chips" data-single="1" id="eGuide">${allGuides().map(g=>`<button class="chip ${t.guide===g.id?'on':''}" data-act="chip" data-v="${g.id}"><span class="swatch" style="background:${g.color}"></span>${esc(g.name)}</button>`).join('')}</div></div>
@@ -2767,7 +2774,7 @@ dep、arr 是各自機場的當地時間（24 小時制）。查不到或不確�
     const n=Math.min(14,Math.max(1,+$('#nDays').value||1));
     if(n>t.days.length)while(t.days.length<n)t.days.push({hotel:'',slots:emptySlots()});
     else if(n<t.days.length){const cut=t.days.slice(n);if(cut.some(d=>dayItems(d).length)){toast('後面幾天還有行程，已保留；請先刪掉那幾天的地點');}else t.days.length=n;}
-    const oldAp=t.flights&&t.flights.arr&&t.flights.arr.ap;t.flights=readFlights();t.drive=chipVal('eDrive')[0]==='1';midAddCities(t);
+    const oldAp=t.flights&&t.flights.arr&&t.flights.arr.ap;t.flights=readFlights();applyDrive(t,chipVal('eDrive')[0]||'0');midAddCities(t);
     if(oldAp!==t.flights.arr.ap){const f0=dayItems(t.days[0])[0];if(f0)f0.leg=null;}
     t.days.forEach(d=>relinkLegs(t,d));
     if(S.dayIdx>=t.days.length)S.dayIdx=0;saveTrip(t);closeSheet();render();toast('已儲存');
